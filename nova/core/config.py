@@ -22,6 +22,7 @@ class LLMSettings(BaseSettings):
     provider: str = "ollama"
     base_url: str = "http://localhost:11434"
     default_model: str = "llama3.1:8b"
+    embedding_model: str = "nomic-embed-text"
     temperature: float = 0.7
     timeout_s: float = 60.0
 
@@ -49,6 +50,13 @@ class AuditSettings(BaseSettings):
     file: str = "logs/audit.nova.jsonl"
 
 
+class MemorySettings(BaseSettings):
+    db_file: str = "memory/nova.db"
+    session_id: str = "default"
+    max_context: int = 3
+    similarity_threshold: float = 0.3
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -59,6 +67,7 @@ class NovaSettings(BaseSettings):
     session: SessionSettings = SessionSettings()
     permissions: PermissionSettings = PermissionSettings()
     audit: AuditSettings = AuditSettings()
+    memory: MemorySettings = MemorySettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -66,6 +75,7 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "provider": "provider",
         "base_url": "base_url",
         "default_model": "default_model",
+        "embedding_model": "embedding_model",
         "temperature": "temperature",
         "timeout_s": "timeout_s",
     },
@@ -82,6 +92,12 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     },
     "audit": {
         "file": "file",
+    },
+    "memory": {
+        "db_file": "db_file",
+        "session_id": "session_id",
+        "max_context": "max_context",
+        "similarity_threshold": "similarity_threshold",
     },
 }
 

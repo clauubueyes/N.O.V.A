@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 import httpx
 
 from nova.core.config import LLMSettings
@@ -16,9 +18,12 @@ from nova.llm.base import (
 logger = get_logger("llm.ollama")
 _CHAT_URL = "/v1/chat/completions"
 _TAGS_URL = "/api/tags"
+_EMBED_URL = "/api/embed"
 
 
 class OllamaProvider(LLMProvider):
+    supports_embedding = True
+
     def __init__(self, settings: LLMSettings, client: httpx.Client | None = None) -> None:
         self._settings = settings
         self._client = client or httpx.Client(
@@ -96,6 +101,32 @@ class OllamaProvider(LLMProvider):
             return True
         except (httpx.HTTPStatusError, httpx.RequestError):
             return False
+
+    def embed_text(self, texts: str | Sequence[str]) -> list[list[float]]:
+        if isinstance(texts, str):
+            texts = [texts]
+        payload = {
+            "model": self._settings.embedding_model,
+            "input": list(texts),
+        }
+        try:
+            response = self._client.post(_EMBED_URL, json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise NOVAProviderError(
+                f"Ollama returned HTTP {exc.response.status_code} embedding: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise NOVAProviderError(
+                f"Could not reach Ollama at {self._settings.base_url}: {exc}"
+            ) from exc
+
+        data = response.json()
+        try:
+            embeddings = data["embeddings"]
+        except (KeyError, TypeError) as exc:
+            raise NOVAProviderError(f"Unexpected Ollama embedding response shape: {data}") from exc
+        return [list(embedding) for embedding in embeddings]
 
     def close(self) -> None:
         self._client.close()

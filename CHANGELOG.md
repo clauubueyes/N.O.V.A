@@ -2,6 +2,23 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.3.0] - 2026-09-07
+
+### Añadido — PHASE 3: Memory
+
+- **Memoria persistente** (`nova/memory/store.py`): `MemoryStore` sobre SQLite local (`memory/nova.db`, sin dependencias nuevas) con dos tablas: `memories` (hechos/preferencias) y `transcripts` (conversación persistente por sesión). Embeddings opcionales por registro.
+- **Embebidos en el proveedor** (`nova/llm/ollama.py`): `embed_text` vía `POST /api/embed` con `nomic-embed-text`; `LLMProvider.embed_text` + flag `supports_embedding` (por defecto no soportado, lanza `NOVAProviderError`). Campo `llm.embedding_model` en config.
+- **Recuperación con contexto** (`nova/memory/retriever.py`): `MemoryRetriever` rankea memorias e historial por similitud coseno sobre embeddings; si no hay provider o falla el embedding, cae a búsqueda por keywords (offline).
+- **`MemoryService`** (`nova/memory/service.py`): fachada `remember` / `record` / `search` / `context` / `recent_memories`; genera un bloque de contexto inyectable en el prompt del LLM.
+- **Herramientas de memoria** (`nova/memory/tools.py`): `remember` (guardar hecho) y `memory_search` (recuperar) como `BaseTool` estándar, bajo el Permission System y audit.
+- **CLI**: cada turno se persiste automáticamente; el contexto relevante se inyecta como mensaje `system` antes de cada petición al LLM; comandos `/remember <text>` y `/memory [query]`.
+- **Config** (`nova/core/config.py`): `MemorySettings` (`db_file`, `session_id`, `max_context`, `similarity_threshold`) con overrides env `NOVA_MEMORY_*`.
+
+### Notas
+
+- Decisiones ADR-010 (memoria en SQLite + embeddings del proveedor con fallback) en `docs/decisions.md`.
+- Actualizados `docs/architecture.md`, `docs/api.md`, `docs/roadmap.md`, `docs/setup.md` y `README.md`.
+
 ## [0.2.0] - 2026-09-06
 
 ### Añadido — PHASE 2: Tool System

@@ -4,11 +4,13 @@
 
 - **Python** 3.11+ (verificado: 3.11.9).
 - **Ollama** corriendo en `http://localhost:11434` (instalado: 0.33.3).
-- Un modelo descargado, p. ej.:
+- Modelos descargados, p. ej.:
   ```powershell
   ollama pull llama3.1:8b
   ollama pull qwen2.5-coder:7b
+  ollama pull nomic-embed-text   # embeddings para la memoria (PHASE 3)
   ```
+  Si falta el modelo de embeddings, N.O.V.A. funciona igual con búsqueda por keywords.
 
 ## Instalación
 
@@ -31,6 +33,7 @@ llm:
   provider: ollama
   base_url: http://localhost:11434
   default_model: llama3.1:8b
+  embedding_model: nomic-embed-text
   temperature: 0.7
 ```
 
@@ -49,7 +52,7 @@ set NOVA_LLM_DEFAULT_MODEL=qwen2.5-coder:7b          # cmd
 .\.venv\Scripts\python -m nova
 ```
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/help`.
 
 ### Ejemplos de herramientas
 
@@ -73,3 +76,4 @@ El test de integración contra Ollama se omite automáticamente si Ollama no res
 
 - `logs/nova.log` — logging de la aplicación (archivo rotativo, 2 MB x 3 backups). Nivel configurable en `config/config.yaml` -> `logging.level`.
 - `logs/audit.nova.jsonl` — audit de cada ejecución de herramienta (decisión, argumentos, resultado, duración; rotativo 2 MB x 3).
+- `memory/nova.db` — base SQLite de memoria (hechos + trascripción de conversación; no versionar).

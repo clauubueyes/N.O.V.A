@@ -22,6 +22,7 @@
 nova/
   core/      config.py, logging.py, session.py, audit.py   (nada depende de aquí hacia arriba)
   llm/       base.py (interfaz), ollama.py, registry.py
+  memory/    store.py (SQLite), retriever.py, service.py, tools.py
   tools/     base.py, standard.py, registry.py, permissions.py, runner.py
   cli/       chat.py
 tests/       pytest

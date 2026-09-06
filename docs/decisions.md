@@ -73,3 +73,11 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
 - **Decisión:** en PHASE 2 el usuario invoca herramientas explícitamente (CLI `/run`) o vía API Python (`ToolRunner.run`). La orquestación automática intención->herramienta llega con los Agents (PHASE 5).
 - **Consecuencias:** el Core de herramientas queda listo y testeable sin depender de un LLM; cuando lleguen los Agents solo habrá que conectar su salida a `ToolRunner.run`.
 - **Estado:** aceptada.
+
+## ADR-010 — Memoria en SQLite local + embeddings del proveedor con fallback a keywords
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 3 necesita persistir conversación y hechos y recuperar contexto relevante. ADR-005 prohibe vector DB externas sin necesidad real.
+- **Decisión:** `MemoryStore` sobre **SQLite** (`memory/nova.db`, stdlib `sqlite3`) con dos tablas (`memories`, `transcripts`). Los embeddings (`LLMProvider.embed_text` vía `/api/embed`, `nomic-embed-text`) se guardan como JSON por fila y la recuperación rankea por **similitud coseno** en Python (O(n) por consulta, suficiente a esta escala). Si el proveedor no soporta embeddings o fallan, se cae a **keywords**; la memoria nunca interrumpe el diálogo.
+- **Consecuencias:** cero dependencias nuevas; migrar a una vector DB real en el futuro solo toca `MemoryRetriever`. El contexto recuperado se inyecta como mensaje `system` antes del turno del usuario.
+- **Estado:** aceptada.

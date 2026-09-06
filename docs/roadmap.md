@@ -28,11 +28,15 @@ Fases progresivas. Cada fase pasa por: ANALIZAR -> IMPLEMENTAR -> TESTEAR -> REV
 
 > Estado: la selección automática de herramientas por parte del LLM se aborda con Agents (PHASE 5).
 
-## PHASE 3 — Memory
+## PHASE 3 — Memory ✅
 
-- [ ] Memoria de conversación.
-- [ ] Memoria persistente (base local, SQLite candidata).
-- [ ] Contexto y recuperación (embeddings `nomic-embed-text`).
+- [x] Memoria de conversación (persistente por sesión en `transcripts`).
+- [x] Memoria persistente (SQLite local, `memory/nova.db`; sin vector DB externa — ADR-005).
+- [x] Contexto y recuperación (embeddings locales `nomic-embed-text` + similitud coseno, con fallback a keywords).
+- [x] Herramientas `remember` y `memory_search` (bajo el Permission System).
+- [x] Inyección automática de contexto relevante en el chat.
+
+> Nota: la suma/resumen semántico de conversaciones largas (compresión de memoria) se puede abordar en PHASE 5 (Agents) con una etapa de "compaction".
 
 ## PHASE 4 — Interface
 

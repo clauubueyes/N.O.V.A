@@ -1,16 +1,20 @@
 # API
 
-Estado: **PHASE 2**. N.O.V.A. expone API **interna** de Python (y un CLI). La API REST (FastAPI) llega en **PHASE 4** junto con la interfaz web/escritorio.
+Estado: **PHASE 3**. N.O.V.A. expone API **interna** de Python (y un CLI). La API REST (FastAPI) llega en **PHASE 4** junto con la interfaz web/escritorio.
 
 ## Proveedor LLM — `nova.llm.base`
 
 ```python
 class LLMProvider(ABC):
+    supports_embedding: bool = False   # True si implementa embed_text
     def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse: ...
     def list_models(self) -> list[ModelInfo]: ...
     def health(self) -> bool: ...
+    def embed_text(self, texts: str | Sequence[str]) -> list[list[float]]: ...
     def close(self) -> None: ...
 ```
+
+`embed_text` devuelve un vector por entrada (p. ej. `nomic-embed-text` vía `/api/embed`); en proveedores que no la soporten lanza `NOVAProviderError`.
 
 Tipos:
 
@@ -50,12 +54,17 @@ provider = create_provider(settings.llm)   # "ollama" registrado en __init__
 from nova.core.config import load_settings
 s = load_settings()          # config/config.yaml + env NOVA_*
 s.llm.default_model          # str
+s.llm.embedding_model        # str (nomic-embed-text)
 s.logging.level              # str
 s.session.max_history_messages
 s.session.system_prompt
+s.memory.db_file             # str (memory/nova.db)
+s.memory.session_id          # str
+s.memory.max_context         # int
+s.memory.similarity_threshold # float
 ```
 
-Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`.
+Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_EMBEDDING_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`, `NOVA_MEMORY_DB_FILE`, `NOVA_MEMORY_SESSION_ID`, `NOVA_MEMORY_MAX_CONTEXT`, `NOVA_MEMORY_SIMILARITY_THRESHOLD`.
 
 ## Contexto — `nova.core.session`
 
@@ -67,6 +76,36 @@ session.messages()                    # list[ChatMessage]
 session.build_request(model="...")    # ChatCompletionRequest
 session.clear()                       # conserva el system prompt
 ```
+
+## Memoria — `nova.memory`
+
+```python
+from nova.memory import MemoryService, MemoryStore
+
+store = MemoryStore("memory/nova.db")                 # SQLite: memories + transcripts
+memory = MemoryService(
+    store,
+    embed=provider.embed_text if provider.supports_embedding else None,
+    session_id="default",
+    max_context=3,
+    similarity_threshold=0.3,
+)
+```
+
+```python
+memory.remember("me llamo Gabriel", kind="fact", source="user")   # persiste un hecho
+memory.record("user", "hola")                                     # persiste un turno
+memory.record("assistant", "hola de vuelta")
+memory.search("Gabriel")            # list[MemoryHit] (memorias + trascripción)
+memory.context("Gabriel")           # str lista formateada para inyectar al prompt
+memory.recent_memories(limit=10)    # list[MemoryRecord]
+memory.close()
+```
+
+- `MemoryHit`: `content`, `source` (`memory`/`transcript`), `kind`, `created_at`, `similarity`; `.to_dict()`.
+- Ranking por similitud coseno sobre embeddings si hay provider; si no hay embeddings o fallan, búsqueda por keywords.
+- La recuperación nunca lanza: un fallo de embedding degrada a keywords.
+- Herramientas bajo el Permission System: `remember` y `memory_search` (`nova.memory.tools`), registrables igual que las estándar.
 
 ## Herramientas — `nova.tools`
 

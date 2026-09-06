@@ -131,6 +131,70 @@ def test_unknown_provider_rejected() -> None:
         create_provider(LLMSettings(provider="nope"))
 
 
+class _EmbedClient:
+    def __init__(self) -> None:
+        self.posted: list[tuple[str, dict]] = []
+
+    def post(self, url: str, json=None) -> httpx.Response:
+        self.posted.append((url, json or {}))
+        return httpx.Response(
+            200,
+            json={
+                "model": "nomic-embed-text",
+                "embeddings": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    def get(self, url: str) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", url))
+
+    def close(self) -> None:
+        pass
+
+
+class _NoEmbedClient:
+    def post(self, url: str, json=None) -> httpx.Response:
+        raise httpx.HTTPStatusError("404", request=httpx.Request("POST", url), response=httpx.Response(404))
+
+    def get(self, url: str) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", url))
+
+    def close(self) -> None:
+        pass
+
+
+def test_embed_text_sends_correct_payload() -> None:
+    client = _EmbedClient()
+    provider = OllamaProvider(LLMSettings(base_url="http://test"), client=client)
+    vectors = provider.embed_text("hello")
+    assert vectors == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    url, payload = client.posted[0]
+    assert url == "/api/embed"
+    assert payload["model"] == "nomic-embed-text"
+    assert payload["input"] == ["hello"]
+
+
+def test_embed_text_supports_sequence_input() -> None:
+    client = _EmbedClient()
+    provider = OllamaProvider(LLMSettings(base_url="http://test"), client=client)
+    vectors = provider.embed_text(["one", "two"])
+    assert len(vectors) == 2
+    assert client.posted[0][1]["input"] == ["one", "two"]
+
+
+def test_provider_supports_embedding_flag() -> None:
+    client = _EmbedClient()
+    provider = OllamaProvider(LLMSettings(base_url="http://test"), client=client)
+    assert provider.supports_embedding is True
+
+
+def test_embed_text_raises_on_http_error() -> None:
+    provider = OllamaProvider(LLMSettings(base_url="http://test"), client=_NoEmbedClient())
+    with pytest.raises(NOVAProviderError):
+        provider.embed_text("nope")
+
+
 def test_ollama_integration_reachable():
     settings = LLMSettings()
     provider = OllamaProvider(settings)

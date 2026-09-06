@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 
 class NOVAProviderError(Exception):
@@ -41,6 +41,11 @@ class ModelInfo:
 
 
 class LLMProvider(ABC):
+    """A chat/embedding provider. All internal code depends only on this abstraction."""
+
+    #: Whether this provider implements embedding (`embed_text`).
+    supports_embedding: bool = False
+
     @abstractmethod
     def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """Send a chat completion request."""
@@ -52,6 +57,13 @@ class LLMProvider(ABC):
     @abstractmethod
     def health(self) -> bool:
         """Return True when the provider is reachable."""
+
+    def embed_text(self, texts: str | Sequence[str]) -> list[list[float]]:
+        """Embed one or many texts and return one vector per input.
+
+        Raises `NOVAProviderError` when the provider does not support embeddings.
+        """
+        raise NOVAProviderError(f"{type(self).__name__} does not support embeddings")
 
     def close(self) -> None:
         """Release provider resources. May be overridden."""
