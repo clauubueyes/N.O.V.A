@@ -64,7 +64,29 @@ API REST + interfaz web (PHASE 4):
 
 Abre `http://127.0.0.1:8000/` (chat web) o `http://127.0.0.1:8000/docs` (OpenAPI). Host/puerto en `config/config.yaml` -> `api` o con `NOVA_API_HOST` / `NOVA_API_PORT`.
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/help`.
+
+### Agentes (PHASE 5)
+
+```powershell
+# listar los presets disponibles
+/agents
+# pasar un texto a un agente (las tools las propone el LLM, N.O.V.A. las ejecuta)
+/agent research qué sabemos del proyecto?
+/agent coding refactoriza nova/tools/standard.py
+```
+
+Cada agente mantiene su propia sesión compartiendo memoria y permisos. Para que el LLM pueda
+ejecutar tools sin preguntar, añade sus nombres a `permissions.allow` en `config/config.yaml`
+o sube el nivel de autonomía:
+
+```yaml
+permissions:
+  autonomy: full   # off | ask | full  (full = todo lo no denegado corre directo)
+  allow:
+    - date_time
+    - calculate
+```
 
 ### Ejemplos de la API
 
@@ -75,6 +97,17 @@ Invoke-RestMethod -Uri http://127.0.0.1:8000/healthz
 $s = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/sessions
 $body = @{ message = "Hola" } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/v1/sessions/$($s.session_id)/chat" -ContentType "application/json" -Body $body
+```
+
+API de agentes:
+
+```powershell
+# listar agentes
+Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/agents
+# crear una sesión ligada a un agente (responde con "steps")
+$s = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/sessions -ContentType "application/json" -Body '{"agent":"research"}'
+# turno con el agente persistente por nombre
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/agents/coding/chat -ContentType "application/json" -Body '{"message":"¿cuánto es 2+2?"}'
 ```
 
 ### Ejemplos de herramientas

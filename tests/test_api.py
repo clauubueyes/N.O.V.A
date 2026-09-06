@@ -233,3 +233,113 @@ class TestSessionChatProviderError:
             # user turn was stored before the provider call, assistant was not
             assert "assistant" not in roles
             assert "user" in roles
+
+
+class ScriptedAgentProvider(LLMProvider):
+    """Returns a queued response per chat call (tool JSON first, then an answer)."""
+
+    supports_embedding = False
+
+    def __init__(self, responses) -> None:
+        self.responses = list(responses)
+        self.requests: list[ChatCompletionRequest] = []
+
+    def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        self.requests.append(request)
+        content = self.responses.pop(0)
+        return ChatCompletionResponse(
+            message=ChatMessage(role="assistant", content=content),
+            model="fake-model",
+        )
+
+    def list_models(self) -> list[ModelInfo]:
+        return [ModelInfo(name="fake-model", size=1024)]
+
+    def health(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        pass
+
+
+def _full_autonomy_client(tmp_path, provider) -> TestClient:
+    from nova.core.config import AutonomyLevel
+
+    settings = load_settings()
+    settings.memory.db_file = str(tmp_path / "memory.db")
+    settings.audit.file = str(tmp_path / "audit.jsonl")
+    settings.permissions.autonomy = AutonomyLevel.full
+    return TestClient(create_app(settings, provider=provider))
+
+
+class TestAgentsApi:
+    def test_list_agents(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            agents = client.get("/v1/agents").json()
+            assert {agent["name"] for agent in agents} == {
+                "general",
+                "coding",
+                "research",
+                "system",
+                "automation",
+            }
+            assert all(agent["description"] for agent in agents)
+
+    def test_agent_chat_runs_tool_and_returns_steps(self, tmp_path) -> None:
+        provider = ScriptedAgentProvider(
+            ['{"tool": "calculate", "args": {"expression": "2+2"}}', "El resultado es 4."]
+        )
+        with _full_autonomy_client(tmp_path, provider) as client:
+            response = client.post(
+                "/v1/agents/system/chat", json={"message": "cuanto es 2+2?"}
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["agent"] == "system"
+            assert data["reply"] == "El resultado es 4."
+            assert data["steps"][0]["tool"] == "calculate"
+            assert data["steps"][0]["ok"] is True
+            assert data["steps"][0]["data"]["result"] == 4
+
+    def test_agent_chat_tool_denied_in_ask(self, tmp_path) -> None:
+        from nova.core.config import AutonomyLevel
+
+        def ask_client(provider) -> TestClient:
+            settings = load_settings()
+            settings.memory.db_file = str(tmp_path / "memory.db")
+            settings.audit.file = str(tmp_path / "audit.jsonl")
+            settings.permissions.autonomy = AutonomyLevel.ask  # API never confirms
+            settings.permissions.deny = ["calculate"]  # explicit deny wins over allow
+            return TestClient(create_app(settings, provider=provider))
+
+        call_provider = ScriptedAgentProvider(
+            ['{"tool": "calculate", "args": {"expression": "2+2"}}', "no puedo"]
+        )
+        with ask_client(call_provider) as client:
+            data = client.post("/v1/agents/system/chat", json={"message": "x"}).json()
+            assert data["steps"][0]["ok"] is False
+            assert "permission denied" in data["steps"][0]["message"]
+            assert data["steps"][0]["tool"] == "calculate"
+
+    def test_session_with_agent(self, tmp_path) -> None:
+        provider = ScriptedAgentProvider(["respuesta directa"])
+        with _full_autonomy_client(tmp_path, provider) as client:
+            created = client.post("/v1/sessions", json={"agent": "coding"}).json()
+            assert created["agent"] == "coding"
+            session_id = created["session_id"]
+            data = client.post(
+                f"/v1/sessions/{session_id}/chat", json={"message": "hola"}
+            ).json()
+            assert data["agent"] == "coding"
+            assert data["reply"] == "respuesta directa"
+            assert data["steps"] == []
+            messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
+            assert messages[-1]["content"] == "respuesta directa"
+
+    def test_unknown_agent_returns_404(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            assert (
+                client.post("/v1/agents/unknown/chat", json={"message": "x"}).status_code
+                == 404
+            )
+            assert client.post("/v1/sessions", json={"agent": "unknown"}).status_code == 404

@@ -33,29 +33,31 @@ Tool (schema + validación + ejecución + resultado)
 Sistema      -> Resultado -> N.O.V.A. -> Usuario
 ```
 
-## Capas actuales (PHASE 1 + 2 + 3 + 4)
+## Capas actuales (PHASE 1 + 2 + 3 + 4 + 5)
 
 | Módulo | Responsabilidad |
 |---|---|
 | `nova.core.config` | Carga de configuración (YAML + env `NOVA_*`), tipada con Pydantic. |
 | `nova.core.logging` | Logging estructurado: consola + archivo rotativo. |
-| `nova.core.session` | Contexto de conversación: historial acotado + system prompt. |
+| `nova.core.session` | Contexto de conversación: historial acotado + system prompt (+ `set_system_prompt`/`add_tool` para agents). |
 | `nova.core.audit` | Audit log de ejecuciones de herramientas (`logs/audit.nova.jsonl`, JSON lines rotativo). |
 | `nova.llm.base` | Interfaz `LLMProvider` (chat, listado, health, embeddings) + tipos `ChatMessage`, `ChatCompletionRequest/Response`, `NOVAProviderError`. |
 | `nova.llm.ollama` | `OllamaProvider`: API compatible OpenAI (`/v1/chat/completions`), `/api/tags` y embeddings (`/api/embed`). |
 | `nova.llm.registry` | Registro de proveedores por nombre; `create_provider` es la única fábrica usada por todo el código. |
 | `nova.memory.store` | `MemoryStore`: SQLite local (hechos + trascripción de conversación, embeddings opcionales). |
 | `nova.memory.retriever` | Recuperación por similitud coseno sobre embeddings, con fallback a keywords. |
-| `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI, la API y futuros Agents. |
+| `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI, la API y los Agents. |
 | `nova.memory.tools` | Herramientas `remember` y `memory_search` (bajo el Permission System). |
-| `nova.tools.base` | `BaseTool` (schema Pydantic + `execute`), `ToolResult`, `ToolError`. |
+| `nova.tools.base` | `BaseTool` (schema Pydantic + `execute` + `json_schema()`), `ToolResult`, `ToolError`. |
 | `nova.tools.standard` | Herramientas de ejemplo: `calculate`, `date_time`, `list_dir`. |
 | `nova.tools.registry` | Registro de herramientas por nombre. |
 | `nova.tools.permissions` | `PermissionSystem`: autonomía (`off`/`ask`/`full`) + reglas allow/deny. |
 | `nova.tools.runner` | `ToolRunner`: permiso -> validación -> ejecución, auditando cada paso. |
-| `nova.api.app` | API REST (FastAPI): `create_app` reutiliza el Core; sesiones con memoria y tools por petición. |
+| `nova.agents.core` | `Agent`: loop acotado (`max_steps`) que propone tools por JSON estructurado, delega en `ToolRunner` y devuelve `AgentResult` con steps. |
+| `nova.agents.presets` | `AgentPreset` + 5 presets (`general`, `coding`, `research`, `system`, `automation`) + `create_agent`. |
+| `nova.api.app` | API REST (FastAPI): `create_app` reutiliza el Core; sesiones con memoria y tools por petición, agentes persistentes por nombre. |
 | `nova.api.server` | Entry point `nova-api`: levanta `uvicorn` con `APISettings`. |
-| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run`). |
+| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run` + `/agents` + `/agent`). |
 
 ## Desacoplamiento del proveedor LLM
 
@@ -82,7 +84,7 @@ El resto del código **nunca** conoce a Ollama: solo depende de `nova.llm.base.L
 6. `nova.core.audit` registra cada ejecución y decisión en `logs/audit.nova.jsonl`.
 
 ```
-Usuario -> (/run o futuro Orchestrator)
+Usuario -> (/run manual o /agente vía Agent)
   v
 ToolRunner
   v
@@ -94,6 +96,33 @@ BaseTool.execute -> ToolResult
   v
 AuditLog (JSON lines) + Resultado -> Usuario
 ```
+
+## Agentes (PHASE 5)
+
+Los agentes son una única clase `Agent` (loop acotado por `max_steps`) instanciada con un
+`AgentPreset` (perfil + system prompt + conjunto de tools). El LLM **propone** tool-calls con
+**JSON estructurado** (`{"tool": "<name>", "args": {...}}`, tolera code fences); N.O.V.A.
+**decide** delegando en el `ToolRunner` (Permission System + audit) y alimenta los resultados
+como mensajes `tool` hasta que el modelo responde en texto plano o se agota el presupuesto.
+Cada paso queda registrado en `AgentResult.steps`.
+
+```
+Usuario -> Agent.act(texto)
+  v
+Agent(session + memoria + tools prompt en system)
+  v
+LLMProvider (responde texto plano O {"tool":..., "args":...})
+  v
+parse_tool_call -> ToolRunner.run (permisos + audit)
+  v
+resultado -> mensaje "tool" -> vuelve al LLM (máx. max_steps)
+  v
+respuesta final -> se persiste en memoria -> AgentResult
+```
+
+Los 5 presets (`general`, `coding`, `research`, `system`, `automation`) en `nova.agents.presets`
+comparten el `MemoryService` y el `ToolRunner`: inyección de contexto y registro de conversación
+igual que el chat normal. Añadir un agente = añadir un `AgentPreset` (ver ADR-012).
 
 ## API REST y web (PHASE 4)
 
@@ -108,9 +137,26 @@ Web / cliente -> FastAPI (nova.api.app)
 
 El contexto recuperado se inyecta igual que en el CLI. En la API un `ASK` se deniega (no hay confirmación interactiva); lo que esté en `permissions.allow` corre directo.
 
+## API REST, web y agents (PHASE 4 + 5)
+
+`nova-api` sirve la web y la API. Cada sesión de API lleva un `ChatSession` + un `MemoryService` (mismo `MemoryStore`, `session_id` propio) + su `ToolRunner`, opcionalmente vinculada a un agente:
+
+```
+Web / cliente -> FastAPI (nova.api.app)
+  |-> POST /v1/sessions/{id}/chat -> ChatSession + MemoryService + Provider (misma lógica que el CLI)
+  |-> POST /v1/sessions/{id}/run   -> ToolRunner (Permission System + audit)
+  |-> POST /v1/chat                -> Provider directo (stateless)
+  |-> GET /v1/agents               -> presets disponibles
+  |-> POST /v1/agents/{name}/chat  -> Agent persistente por nombre (sesión + memoria + tools)
+  |-> POST /v1/sessions {agent}    -> sesión ligada a un agente (responde con `steps`)
+```
+
+Crear una sesión con `{"agent": "research"}` hace que `/chat` use `Agent.act` y devuelva los `steps`
+de cada tool además de la respuesta. En la web, el selector de agente decide con qué presets habla la sesión.
+
 ## Caminos futuros (incremental)
 
-- **PHASE 5-9** — Agents (selección automática de herramientas por el LLM y compresión de memoria), voz, automatizaciones, plugins y autonomía avanzada.
+- **PHASE 6-9** — voz, automatizaciones, plugins y autonomía avanzada (planificación, workflows multi-step).
 
 ## Restricciones de diseño
 
@@ -120,3 +166,4 @@ El contexto recuperado se inyecta igual que en el CLI. En la API un `ASK` se den
 - Las herramientas solo se ejecutan tras la decisión explícita o permitida del `PermissionSystem`; toda ejecución queda auditada.
 - La memoria nunca interrumpe el diálogo: si el embedding falla o no existe, se degrada a keywords.
 - La API (y la web) solo hablan con el Core: nunca conocen los detalles de Ollama ni de las herramientas.
+- Los Agents son config, no herencia: una clase `Agent` + presets paramétricos (ADR-012). El LLM propone, el `ToolRunner` decide y audita.

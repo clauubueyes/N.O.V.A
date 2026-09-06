@@ -27,6 +27,10 @@ class ToolRunner:
         self._audit = audit
         self._confirm = confirm or (lambda _question: False)
 
+    @property
+    def tools(self) -> list[BaseTool]:
+        return self._registry.all()
+
     def run(self, tool_name: str, args: dict[str, Any] | None = None) -> ToolResult:
         try:
             tool = self._registry.get(tool_name)

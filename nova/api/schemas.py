@@ -38,6 +38,11 @@ class ToolInfoOut(BaseModel):
 class SessionCreateResponse(BaseModel):
     session_id: str
     model: str
+    agent: str = ""
+
+
+class SessionCreateRequest(BaseModel):
+    agent: str | None = Field(default=None, description="Bind the session to an agent preset")
 
 
 class SessionChatRequest(BaseModel):
@@ -50,6 +55,25 @@ class SessionChatResponse(BaseModel):
     reply: str
     model: str
     context: str = ""
+    agent: str = ""
+    steps: list[dict] = Field(default_factory=list)
+
+
+class AgentInfoOut(BaseModel):
+    name: str
+    description: str
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+    model: str | None = None
+
+
+class AgentChatResponse(BaseModel):
+    agent: str
+    reply: str
+    model: str
+    steps: list[dict] = Field(default_factory=list)
 
 
 class SessionRunRequest(BaseModel):

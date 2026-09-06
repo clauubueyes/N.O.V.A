@@ -1,6 +1,6 @@
 # API
 
-Estado: **PHASE 4**. N.O.V.A. expone API **interna** de Python, un CLI y una **API REST** (FastAPI) con interfaz web.
+Estado: **PHASE 5**. N.O.V.A. expone API **interna** de Python, un CLI, una **API REST** (FastAPI) con interfaz web y **Agents**.
 
 ## Proveedor LLM — `nova.llm.base`
 
@@ -74,6 +74,8 @@ Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA
 session = ChatSession(max_history_messages=20, system_prompt="...")
 session.add_user("hola")
 session.add_assistant("hola de vuelta")
+session.add_tool("resultado de una herramienta")  # mensaje rol "tool" (Agents)
+session.set_system_prompt("nuevo prompt")         # reemplaza el system prompt
 session.messages()                    # list[ChatMessage]
 session.build_request(model="...")    # ChatCompletionRequest
 session.clear()                       # conserva el system prompt
@@ -181,6 +183,44 @@ audit.record(tool="calculate", decision="allow", args={...}, ok=True, duration_m
 
 JSONL rotativo (2 MB x 3 backups). `record` nunca lanza: fallos de escritura se loggean y no rompen la ejecución.
 
+## Agents — `nova.agents` (PHASE 5)
+
+Presets paramétricos sobre una única clase `Agent`; el LLM **propone** tool-calls y N.O.V.A. las **ejecuta** vía `ToolRunner`.
+
+```python
+from nova.agents import agent_presets
+from nova.llm import create_provider
+from nova.memory import MemoryService, MemoryStore
+from nova.tools import ToolRunner
+from nova.agents import create_agent
+
+agent = create_agent(
+    "coding",                       # general | coding | research | system | automation
+    provider=provider,
+    runner=tools_runner,            # ToolRunner (Permission System + audit)
+    memory=memory,                  # opcional: inyección de contexto + registro
+    model="llama3.1:8b",            # opcional
+    max_steps=4,                    # tope de tool-calls por turno
+)
+result = agent.act("refactoriza esto")
+# AgentResult: .answer (str), .model (str), .steps (list[AgentStep])
+for step in result.steps:           # cada tool-call propuesta por el LLM
+    print(step.tool, step.args, step.ok, step.message, step.data)
+```
+
+- **Protocolo de tool-call**: el modelo responde SOLO con `{"tool": "<nombre>", "args": {...}}` (JSON, tolera code fences) o con texto plano como respuesta final. `nova.agents.parse_tool_call` extrae la propuesta.
+- El sistema inyecta en el prompt el perfil del agente + los schemas JSON de sus tools (`BaseTool.json_schema()`); los resultados vuelven como mensajes `tool`.
+- `create_agent` comparte el `MemoryService` y el `ToolRunner` ya construidos (misma memoria y permisos que el chat normal).
+- Presets en `nova.agents.presets`:
+
+| Preset | Tools |
+|---|---|
+| `general` | todas |
+| `coding` | `calculate`, `list_dir`, `date_time`, `remember`, `memory_search` |
+| `research` | `list_dir`, `date_time`, `memory_search`, `remember` |
+| `system` | `date_time`, `list_dir` |
+| `automation` | `calculate`, `date_time`, `list_dir`, `remember`, `memory_search` |
+
 ## Uso como librería (ejemplo)
 
 ```python
@@ -213,7 +253,7 @@ result = tools.run("calculate", {"expression": "2+2"})
 print(result.data)   # {"expression": "2+2", "result": 4}
 ```
 
-## Endpoint HTTP — `nova.api` (PHASE 4)
+## Endpoint HTTP — `nova.api` (PHASE 4 + 5)
 
 Arranque:
 
@@ -231,16 +271,20 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
 | `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`). |
 | `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
-| `POST /v1/sessions` | Crea una sesión -> `{"session_id", "model"}`. |
-| `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria: `{"message", "model"}` -> `{"reply", "context", ...}`. |
+| `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |
+| `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria: `{"message", "model"}` -> `{"reply", "context", "steps", ...}`. |
 | `GET /v1/sessions/{id}/messages` | Historial de la sesión. |
 | `DELETE /v1/sessions/{id}` | Elimina la sesión. |
 | `POST /v1/sessions/{id}/run` | Ejecuta una herramienta bajo permisos: `{"tool", "args"}` -> `{"result": ToolResult}`. |
 | `POST /v1/sessions/{id}/remember` | Guarda un hecho: `{"content", "kind", "source"}`. |
 | `GET /v1/sessions/{id}/memory?q=` | Sin `q`: memorias recientes; con `q`: búsqueda con contexto. |
+| `GET /v1/agents` | Presets de agentes disponibles (`name`, `description`). |
+| `POST /v1/agents/{name}/chat` | Turno con el agente persistente por nombre: `{"message", "model"}` -> `{"agent", "reply", "model", "steps"}`. |
 
 Notas:
 
 - El endpoint de sesión reutiliza `ChatSession` + `MemoryService`: cada turno se persiste y se inyecta el contexto relevante antes de llamar al LLM.
+- Si la sesión se creó con `agent`, `/chat` usa `Agent.act` y devuelve `steps` (una entrada por tool-call: nombre, args, ok, mensaje, datos) además de la respuesta.
+- Los agentes estatelés persisten por nombre en el `AppState` (`nova.api.app`): mantienen sesión, memoria propia y historial entre llamadas.
 - La API nunca pregunta interactivamente: un permiso `ASK` se resuelve denegado (`result.ok == false`). Las reglas `allow` siguen ejecutando directo (p. ej. `calculate`).
-- Errores del proveedor -> `502`; sesión inexistente -> `404`.
+- Errores del proveedor -> `502`; sesión/agente inexistente -> `404`.

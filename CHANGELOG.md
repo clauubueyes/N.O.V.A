@@ -2,6 +2,26 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.5.0] - 2026-09-07
+
+### Añadido — PHASE 5: Agents
+
+- **Núcleo de agentes** (`nova/agents/core.py`): clase única `Agent` con loop acotado (`max_steps`). El LLM **propone** tool-calls con JSON estructurado (`{"tool": "<name>", "args": {...}}`, tolera code fences) y N.O.V.A. **decide**/ejecuta vía el `ToolRunner` (Permission System + audit). Retorna `AgentResult` con la respuesta, el modelo y los `steps`.
+- **`ChatSession.set_system_prompt` y `add_tool`**: el agente reemplaza el prompt de sistema con su perfil + lista de tools (schemas JSON) y alimenta al LLM los resultados de cada tool como mensajes `tool`.
+- **`BaseTool.json_schema()`**: expone el schema Pydantic de cada herramienta para describirlas al LLM.
+- **5 presets paramétricos** (`nova/agents/presets.py`): `AgentPreset` (name/description/system_prompt/tool_names) para `general`, `coding`, `research`, `system` y `automation`, con `create_agent` y `agent_presets`/`get_preset`. Sin subclases.
+- **Memoria compartida**: los agentes reutilizan el `MemoryService` (inyección de contexto por turno y registro de la conversación) usando `remember`/`memory_search` como tools.
+- **CLI** (`nova/cli/chat.py`): comandos `/agents` (listar) y `/agent <name> <text>` (sesiones persistentes por agente); se muestra cada step de tool.
+- **API** (`nova/api/app.py`): `GET /v1/agents`, `POST /v1/agents/{name}/chat` (agentes persistentes por nombre), sesiones con campo `agent` (`POST /v1/sessions` con `{"agent": ...}`, turnos con `steps`). En la API un permiso `ASK` se deniega (sin confirmación interactiva).
+- **Web** (`nova/api/static/index.html`): selector de agente y visualización de los steps de cada turno.
+- **Tests**: 19 tests de agents (parse del JSON de tool-call, tool ok, tool denegada por permisos, tool desconocida, guarda de `max_steps`, error del provider, inyección de contexto de memoria, registro de conversación, presets) + 5 tests de API de agents. Total: 99.
+
+### Notas
+
+- Decisión ADR-012 (Agents como presets paramétricos con protocolo RSA/JSON estructurado) en `docs/decisions.md`.
+- Sin dependencias nuevas; la selección automática de herramientas se exponía en ADR-009 y se materializa en esta fase.
+- Actualizados `docs/architecture.md`, `docs/api.md`, `docs/roadmap.md`, `docs/setup.md`, `docs/development.md` y `README.md`.
+
 ## [0.4.0] - 2026-09-07
 
 ### Añadido — PHASE 4: Interface

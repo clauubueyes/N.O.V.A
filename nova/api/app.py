@@ -11,13 +11,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from nova import __version__
+from nova.agents import Agent, agent_presets, create_agent, get_preset
 from nova.api.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
+    AgentInfoOut,
     ChatRequest,
     ChatResponse,
     ModelInfoOut,
     RememberRequest,
     SessionChatRequest,
     SessionChatResponse,
+    SessionCreateRequest,
     SessionCreateResponse,
     SessionRunRequest,
     ToolInfoOut,
@@ -49,6 +54,7 @@ class SessionEntry:
     memory: MemoryService
     runner: ToolRunner
     model: str
+    agent: Agent | None = None
 
     def close(self) -> None:
         self.memory.close()
@@ -61,6 +67,7 @@ class AppState:
     audit: AuditLog
     permissions: PermissionSystem
     sessions: dict[str, SessionEntry] = field(default_factory=dict)
+    agents: dict[str, SessionEntry] = field(default_factory=dict)
 
 
 def _tool_infos() -> list[ToolInfoOut]:
@@ -95,6 +102,8 @@ def create_app(
         provider.close()
         for entry in state.sessions.values():
             entry.close()
+        for entry in state.agents.values():
+            entry.close()
 
     app = FastAPI(
         title="N.O.V.A.",
@@ -104,7 +113,7 @@ def create_app(
     )
     app.state.nova = state
 
-    def build_session(session_id: str) -> SessionEntry:
+    def build_session(session_id: str, agent_name: str | None = None) -> SessionEntry:
         session = ChatSession(
             max_history_messages=settings.session.max_history_messages,
             system_prompt=settings.session.system_prompt,
@@ -126,11 +135,24 @@ def create_app(
             audit=state.audit,
             confirm=lambda _question: False,  # the API never asks interactively
         )
+        model = settings.llm.default_model
+        agent = None
+        if agent_name:
+            get_preset(agent_name)
+            agent = create_agent(
+                agent_name,
+                provider=provider,
+                runner=runner,
+                memory=memory,
+                model=model,
+                session=session,
+            )
         return SessionEntry(
             session=session,
             memory=memory,
             runner=runner,
-            model=settings.llm.default_model,
+            model=model,
+            agent=agent,
         )
 
     def get_session(session_id: str) -> SessionEntry:
@@ -165,6 +187,36 @@ def create_app(
     def list_tools() -> list[ToolInfoOut]:
         return _tool_infos()
 
+    def get_agent_entry(name: str) -> SessionEntry:
+        entry = state.agents.get(name)
+        if entry is not None:
+            return entry
+        try:
+            entry = build_session(f"agent-{name}", agent_name=name)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        state.agents[name] = entry
+        return entry
+
+    @app.get("/v1/agents", response_model=list[AgentInfoOut])
+    def list_agents() -> list[AgentInfoOut]:
+        return [AgentInfoOut(name=p.name, description=p.description) for p in agent_presets()]
+
+    @app.post("/v1/agents/{name}/chat", response_model=AgentChatResponse)
+    def agent_chat(name: str, req: AgentChatRequest) -> AgentChatResponse:
+        entry = get_agent_entry(name)
+        try:
+            result = entry.agent.act(req.message)
+        except NOVAProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        entry.model = result.model
+        return AgentChatResponse(
+            agent=name,
+            reply=result.answer,
+            model=result.model,
+            steps=[step.to_dict() for step in result.steps],
+        )
+
     @app.post("/v1/chat", response_model=ChatResponse)
     def chat(req: ChatRequest) -> ChatResponse:
         try:
@@ -186,16 +238,38 @@ def create_app(
         )
 
     @app.post("/v1/sessions", response_model=SessionCreateResponse)
-    def create_session() -> SessionCreateResponse:
+    def create_session(req: SessionCreateRequest | None = None) -> SessionCreateResponse:
+        req = req or SessionCreateRequest()
         session_id = uuid.uuid4().hex
-        entry = build_session(session_id)
+        try:
+            entry = build_session(session_id, agent_name=req.agent)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         state.sessions[session_id] = entry
-        logger.info("api session created: %s", session_id)
-        return SessionCreateResponse(session_id=session_id, model=entry.model)
+        logger.info("api session created: %s agent=%s", session_id, entry.agent.name if entry.agent else "")
+        return SessionCreateResponse(
+            session_id=session_id,
+            model=entry.model,
+            agent=entry.agent.name if entry.agent else "",
+        )
 
     @app.post("/v1/sessions/{session_id}/chat", response_model=SessionChatResponse)
     def session_chat(session_id: str, req: SessionChatRequest) -> SessionChatResponse:
         entry = get_session(session_id)
+        if entry.agent is not None:
+            try:
+                result = entry.agent.act(req.message)
+            except NOVAProviderError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            entry.model = result.model
+            return SessionChatResponse(
+                session_id=session_id,
+                reply=result.answer,
+                model=result.model,
+                context="",
+                agent=entry.agent.name,
+                steps=[step.to_dict() for step in result.steps],
+            )
         entry.session.add_user(req.message)
         entry.memory.record("user", req.message)
         model = req.model or entry.model

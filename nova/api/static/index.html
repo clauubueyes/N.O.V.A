@@ -19,6 +19,10 @@
   header h1 { font-size: 16px; margin: 0; color: #7fd1ff; letter-spacing: 1px; }
   header .model { color: #8a93a6; font-size: 12px; }
   nav { margin-left: auto; display: flex; gap: 8px; }
+  nav select {
+    background: #232a38; color: #d7dce5; border: 1px solid #343d50;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  }
   nav button {
     background: #232a38; color: #d7dce5; border: 1px solid #343d50;
     border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
@@ -58,6 +62,9 @@
   <h1>N.O.V.A.</h1>
   <span class="model" id="model">conectando...</span>
   <nav>
+    <select id="agent" title="Elige un agente (las tools las decide el modelo)">
+      <option value="">sin agente</option>
+    </select>
     <button id="btn-models" type="button">modelos</button>
     <button id="btn-tools" type="button">herramientas</button>
   </nav>
@@ -85,7 +92,9 @@
   const input = document.getElementById("input");
   const send = document.getElementById("send");
   const model = document.getElementById("model");
+  const agentSelect = document.getElementById("agent");
   let sessionId = null;
+  let agentName = "";
 
   function append(kind, text) {
     const node = document.createElement("div");
@@ -131,16 +140,52 @@
     dialog.showModal();
   }
 
-  async function boot() {
-    try {
-      const created = await json("POST", "/v1/sessions");
-      sessionId = created.session_id;
-      const health = await json("GET", "/healthz");
-      model.textContent = "modelo: " + created.model + " | estado: " + health.status;
-    } catch (error) {
-      appendMeta("No se pudo iniciar sesion: " + error.message);
+  function renderSteps(steps) {
+    for (const step of steps) {
+      const args = JSON.stringify(step.args || {});
+      const status = step.ok ? "ok" : "error";
+      appendMeta("paso [" + status + "] " + step.tool + " " + args + " -> " + step.message);
+      if (step.data) appendMeta("  datos: " + JSON.stringify(step.data));
     }
   }
+
+  async function createSession() {
+    try {
+      const created = await json("POST", "/v1/sessions", { agent: agentName || null });
+      sessionId = created.session_id;
+      const health = await json("GET", "/healthz");
+      model.textContent =
+        "modelo: " + created.model +
+        (created.agent ? " | agente: " + created.agent : "") +
+        " | estado: " + health.status;
+      return created;
+    } catch (error) {
+      appendMeta("No se pudo iniciar sesion: " + error.message);
+      throw error;
+    }
+  }
+
+  async function boot() {
+    try {
+      const agents = await json("GET", "/v1/agents");
+      for (const agent of agents) {
+        const option = document.createElement("option");
+        option.value = agent.name;
+        option.textContent = agent.name + " — " + agent.description;
+        agentSelect.appendChild(option);
+      }
+    } catch (error) {
+      appendMeta("No se pudieron cargar los agentes: " + error.message);
+    }
+    createSession();
+  }
+
+  agentSelect.addEventListener("change", () => {
+    agentName = agentSelect.value;
+    log.replaceChildren();
+    appendMeta("Nueva sesion" + (agentName ? " con agente " + agentName : "") + ". Escribe un mensaje.");
+    createSession();
+  });
 
   document.getElementById("compose").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -152,6 +197,7 @@
     try {
       const data = await json("POST", "/v1/sessions/" + sessionId + "/chat", { message });
       append("assistant", data.reply);
+      if (data.steps && data.steps.length) renderSteps(data.steps);
       if (data.context) appendMeta("contexto recuperado:\n" + data.context);
     } catch (error) {
       appendMeta("[error] " + error.message);

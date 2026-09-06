@@ -89,3 +89,14 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
 - **Decisión:** FastAPI en `nova/api` (ADR-001 lo fijaba para esta fase). Dos modos: `POST /v1/chat` stateless (mensajes completos, passthrough al provider) y `POST /v1/sessions/{id}/chat` que reutiliza `ChatSession` + `MemoryService` + `ToolRunner` (una sesión de API = un `ChatSession` + una memoria con `session_id` propio). El contexto se inyecta igual que en el CLI. La API nunca interactúa en vivo: un `ASK` se deniega (confirm = False).
 - **Consecuencias:** añadir un cliente (web, escritorio, script) = llamar a la API; la lógica (permisos, audit, memoria) sigue viviendo en el Core y se testea con `fastapi.testclient` inyectando un provider falso.
 - **Estado:** aceptada.
+
+## ADR-012 — Agents como presets paramétricos con protocolo de tool-call por JSON estructurado
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 5 materializa ADR-009 (el LLM selecciona herramientas). El function calling nativo difiere según proveedor (OpenAI/Ollama) y OpenAI SDK está prohibido (ADR-006), así que hay que elegir cómo el modelo propone herramientas.
+- **Decisión:**
+  1. **Protocolo de tool-call por JSON estructurado** en lugar de function calling nativo: el LLM responde SOLO con un objeto JSON `{"tool": "<name>", "args": {...}}` (tolerante a code fences) para proponer una llamada, o texto plano como respuesta final. Es provider-agnóstico y testeable con fakes.
+  2. **Agentes como presets paramétricos** — una única clase `Agent` (loop acotado por `max_steps`) instanciada con un `AgentPreset` (name/description/system_prompt/tool_names); sin subclases. Los 5 agentes (`general`, `coding`, `research`, `system`, `automation`) son config, no herencia.
+  3. El agente inyecta en el system prompt su perfil + schemas JSON de sus tools (`BaseTool.json_schema()`), alimenta cada resultado como mensaje `tool`, y delega TODA ejecución al `ToolRunner` (Permission System + audit): el LLM **propone**, N.O.V.A. **decide**.
+- **Consecuencias:** nuevo módulo `nova.agents` reutilizando `ChatSession`, `MemoryService` y `ToolRunner` (sin duplicar Core); `create_agent`/`agent_presets` para el CLI/API/web. Añadir un agente = añadir un `AgentPreset`. El bucle de steps está acotado para evitar bucles infinitos; el `max_steps` se expone al instanciar.
+- **Estado:** aceptada.

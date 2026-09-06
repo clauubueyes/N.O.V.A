@@ -18,6 +18,15 @@ class ChatSession:
     def add_assistant(self, content: str) -> None:
         self._append("assistant", content)
 
+    def add_tool(self, content: str) -> None:
+        """Append a tool result message (used by Agents)."""
+        self._append("tool", content)
+
+    def set_system_prompt(self, content: str) -> None:
+        """Replace (or insert) the system prompt message."""
+        chat = [m for m in self._messages if m.role != "system"]
+        self._messages = [ChatMessage(role="system", content=content)] + chat
+
     def _append(self, role: str, content: str) -> None:
         self._messages.append(ChatMessage(role=role, content=content))
         self._trim()

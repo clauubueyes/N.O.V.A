@@ -47,13 +47,20 @@ Fases progresivas. Cada fase pasa por: ANALIZAR -> IMPLEMENTAR -> TESTEAR -> REV
 
 > Nota: interfaz de escritorio (sistemas) se puede abordar más adelante como cliente de esta API; la web cubre el caso funcionante.
 
-## PHASE 5 — Agents
+## PHASE 5 — Agents ✅
 
-- [ ] General Agent.
-- [ ] Coding Agent.
-- [ ] Research Agent.
-- [ ] System Agent.
-- [ ] Automation Agent.
+- [x] General Agent.
+- [x] Coding Agent.
+- [x] Research Agent.
+- [x] System Agent.
+- [x] Automation Agent.
+- [x] Protocolo de tool-call por JSON estructurado (provider-agnóstico).
+- [x] Agentes como presets paramétricos (`AgentPreset`) sobre una única clase `Agent`.
+- [x] Integración CLI (`/agents`, `/agent <name> <text>`), API y web con pasos visibles.
+
+> Los agentes se implementan como **presets** (perfil + conjunto de tools + prompt) sobre
+> una única clase `Agent`: el LLM **propone** llamadas con JSON estructurado y N.O.V.A.
+> **decide** vía el `ToolRunner` (Permission System + audit) — ver [decisions.md](decisions.md) ADR-012.
 
 ## PHASE 6 — Voice
 

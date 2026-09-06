@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 
+from nova.agents import Agent, agent_presets, create_agent
 from nova.core.audit import AuditLog
 from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
@@ -19,7 +20,7 @@ from nova.tools.runner import ToolRunner
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
-| Phase 3 - Memory (SQLite + embeddings) | local LLM via Ollama |
+| Phase 5 - Agents (automatic tool selection) | local Ollama    |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -32,6 +33,8 @@ Commands:
   /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
+  /agents           list available agents
+  /agent <name> <text> run a text through an agent (tools proposed by the LLM)
   /help             show this help"""
 
 
@@ -47,6 +50,16 @@ def _format_result(result: ToolResult) -> str:
 def _format_memory_hit(hit: MemoryHit) -> str:
     source = "memory" if hit.source == "memory" else "past"
     return f"  [{source}] ({hit.created_at}): {hit.content}"
+
+
+def _format_agent_result(result) -> str:
+    lines = []
+    for step in result.steps:
+        status = "ok" if step.ok else "error"
+        detail = step.message or ("done" if step.ok else "failure")
+        lines.append(f"  [step {status}] {step.tool}({json.dumps(step.args, ensure_ascii=False)}) -> {detail}")
+    lines.append(f"{result.answer}")
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -81,6 +94,24 @@ def main() -> int:
     print(BANNER)
     print(f"Model: {current_model}. Type /help for commands.")
     logger.info("session started, model=%s, memory=%s", current_model, memory.session_id)
+
+    agents: dict[str, Agent] = {}
+
+    def get_agent(name: str) -> Agent | None:
+        preset_names = {preset.name for preset in agent_presets()}
+        if name not in preset_names:
+            return None
+        agent = agents.get(name)
+        if agent is None:
+            agent = create_agent(
+                name,
+                provider=provider,
+                runner=tools_runner,
+                memory=memory,
+                model=current_model,
+            )
+            agents[name] = agent
+        return agent
 
     try:
         while True:
@@ -144,6 +175,31 @@ def main() -> int:
                     else:
                         for record in memory.recent_memories(limit=10):
                             print(f"  [memory #{record.id}] ({record.created_at}): {record.content}")
+                elif command == "agents":
+                    for preset in agent_presets():
+                        print(f"  - {preset.name:<12} {preset.description}")
+                elif command == "agent":
+                    if len(parts) < 2:
+                        print("Usage: /agent <name> <text>   e.g. /agent coding modulo de filtros")
+                        print("  /agents for the list of names")
+                        continue
+                    name = parts[1]
+                    text = " ".join(parts[2:]).strip()
+                    if not text:
+                        print("Usage: /agent <name> <text>")
+                        continue
+                    agent = get_agent(name)
+                    if agent is None:
+                        print(f"Skipping: unknown agent '{name}'. See /agents.")
+                        continue
+                    logger.info("agent %s: %s", name, text)
+                    try:
+                        result = agent.act(text)
+                    except NOVAProviderError as exc:
+                        print(f"[nova error] {exc}")
+                        logger.warning("agent error: %s", exc)
+                        continue
+                    print(f"{name.capitalize()} > {_format_agent_result(result)}")
                 elif command == "run":
                     if len(parts) < 2:
                         print("Usage: /run <tool> <json args>   e.g. /run calculate {\"expression\":\"2+2\"}")

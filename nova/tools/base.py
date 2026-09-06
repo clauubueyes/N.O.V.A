@@ -48,6 +48,10 @@ class BaseTool(ABC):
             details = [f"{error['loc'][0]}: {error['msg']}" for error in exc.errors()]
             raise ToolArgumentError(f"invalid arguments for {self.name}: {', '.join(details)}") from exc
 
+    def json_schema(self) -> dict[str, Any]:
+        """JSON schema of the tool arguments (used to describe tools to the LLM)."""
+        return self.input_schema.model_json_schema()
+
     @abstractmethod
     def execute(self, params: BaseModel) -> ToolResult:
         """Execute the tool with validated parameters and return a typed result."""

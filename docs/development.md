@@ -14,6 +14,9 @@
 
 # Smoke test de herramientas (sin LLM)
 .\.venv\Scripts\python -c "from nova.core.config import load_settings; from nova.core.audit import AuditLog; from nova.tools import ToolRunner, registry; from nova.tools.permissions import PermissionSystem; s=load_settings(); r=ToolRunner(registry, PermissionSystem(s.permissions), AuditLog(s.audit.file)); print(r.run('calculate', {'expression': '2+2'}))"
+
+# Smoke test de agents (semilla de herramientas locales, sin LLM)
+.\.venv\Scripts\python -c "from nova.agents import agent_presets; print([p.name for p in agent_presets()])"
 ```
 
 ## Estructura
@@ -24,6 +27,7 @@ nova/
   llm/       base.py (interfaz), ollama.py, registry.py
   memory/    store.py (SQLite), retriever.py, service.py, tools.py
   tools/     base.py, standard.py, registry.py, permissions.py, runner.py
+  agents/    core.py (Agent + JSON tool-call), presets.py (5 presets + create_agent)
   api/       app.py (FastAPI), server.py (uveicorn), schemas.py, static/index.html
   cli/       chat.py
 tests/       pytest
