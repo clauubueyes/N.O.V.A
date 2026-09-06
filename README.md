@@ -4,7 +4,7 @@
 
 Asistente personal de IA inspirado en JARVIS pero completamente original. Construido alrededor de **Ollama** (modelos locales), con arquitectura en capas que separa la **inteligencia** de la **ejecución** sobre el sistema.
 
-> Estado actual: **PHASE 1 — N.O.V.A. Core** (configuración, proveedor Ollama, conversación, contexto, logging).
+> Estado actual: **PHASE 2 — Tool System** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit).
 
 ## Principio fundamental
 
@@ -24,13 +24,20 @@ python -m venv .venv
 
 Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`.
 
+Prueba una herramienta dentro del chat:
+
+```text
+/run calculate {"expression":"2+2"}
+```
+
 ## Proyecto
 
 ```
-config/config.yaml   Configuración externa (modelos aquí, nunca en código)
+config/config.yaml    Configuración externa (modelos, permissions, audit; nunca en código)
 nova/
-  core/              Config, logging, contexto de conversación (ChatSession)
+  core/              Config, logging, contexto de conversación (ChatSession), audit log
   llm/               LLMProvider (interfaz) + OllamaProvider + registro de proveedores
+  tools/             Herramientas (BaseTool + schemas) + Permission System + runner
   cli/               Interfaz de conversación
   api/               (PHASE 4) API REST
 docs/                Documentación del proyecto

@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 ENV_PREFIX = "NOVA_"
+
+
+class AutonomyLevel(str, Enum):
+    off = "off"
+    ask = "ask"
+    full = "full"
 
 
 class LLMSettings(BaseSettings):
@@ -32,6 +39,16 @@ class SessionSettings(BaseSettings):
     )
 
 
+class PermissionSettings(BaseSettings):
+    autonomy: AutonomyLevel = AutonomyLevel.ask
+    allow: list[str] = Field(default_factory=list)
+    deny: list[str] = Field(default_factory=list)
+
+
+class AuditSettings(BaseSettings):
+    file: str = "logs/audit.nova.jsonl"
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -40,6 +57,8 @@ class NovaSettings(BaseSettings):
     llm: LLMSettings = LLMSettings()
     logging: LoggingSettings = LoggingSettings()
     session: SessionSettings = SessionSettings()
+    permissions: PermissionSettings = PermissionSettings()
+    audit: AuditSettings = AuditSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -57,6 +76,12 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "session": {
         "max_history_messages": "max_history_messages",
         "system_prompt": "system_prompt",
+    },
+    "permissions": {
+        "autonomy": "autonomy",
+    },
+    "audit": {
+        "file": "file",
     },
 }
 

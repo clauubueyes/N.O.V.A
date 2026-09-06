@@ -49,3 +49,27 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
 - **Decisión:** `OllamaProvider` usa `httpx` directamente contra esa API. El modelo de datos (roles/content) es el que todos los providers comparten.
 - **Consecuencias:** sin dependencia externa innecesaria; si mañana se quiere el SDK oficial de algún proveedor, es un detalle interno del provider.
 - **Estado:** aceptada.
+
+## ADR-007 — Permission System: autonomía + reglas allow/deny, ejecución siempre auditada
+
+- **Fecha:** 2026-09-06
+- **Contexto:** PHASE 2 introduce la ejecución de herramientas; sin control, el LLM/el usuario podrían ejecutar cualquier acción sobre el sistema.
+- **Decisión:** toda ejecución pasa por `PermissionSystem.authorize(tool)`. Nivel de autonomía por config: `off` (solo `allow`), `ask` (lo no regulado pregunta), `full` (solo `deny` bloquea). Precedencia: `deny` > `allow` > autonomía. Nada se ejecuta fuera de `ToolRunner`.
+- **Consecuencias:** añadir una herramienta no la habilita sola; hay que configurar su regla en `config/config.yaml` -> `permissions`. El runner es el único punto que consulta permisos + audita.
+- **Estado:** aceptada.
+
+## ADR-008 — Audit log en JSONL local (rotativo), no una base de datos
+
+- **Fecha:** 2026-09-06
+- **Contexto:** se necesita un registro fiable de cada ejecución/decisión (quién, qué, argumentos, resultado, duración) para revisión y trazabilidad.
+- **Decisión:** audit como archivo append-only de líneas JSON (`logs/audit.nova.jsonl`), rotación tipo RotatingFileHandler (2 MB x 3). `AuditLog.record` nunca lanza: un fallo de escritura se loggea y no interrumpe la ejecución.
+- **Consecuencias:** sin dependencias nuevas. Si en PHASE 3 o PHASE 4 se necesita consulta/analítica pesada, se puede migrar a SQLite sin cambiar el runner.
+- **Estado:** aceptada.
+
+## ADR-009 — La selección de herramientas por el LLM se deja para Agents (PHASE 5)
+
+- **Fecha:** 2026-09-06
+- **Contexto:** PHASE 2 construye el sistema de herramientas y permisos. Hacer que el LLM decida qué herramienta llamar (function calling) añade complejidad de parsing/prompting y no es requisito del roadmap del Tool System.
+- **Decisión:** en PHASE 2 el usuario invoca herramientas explícitamente (CLI `/run`) o vía API Python (`ToolRunner.run`). La orquestación automática intención->herramienta llega con los Agents (PHASE 5).
+- **Consecuencias:** el Core de herramientas queda listo y testeable sin depender de un LLM; cuando lleguen los Agents solo habrá que conectar su salida a `ToolRunner.run`.
+- **Estado:** aceptada.

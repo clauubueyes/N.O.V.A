@@ -11,14 +11,18 @@
 
 # Dial con Ollama sin CLI (smoke test)
 .\.venv\Scripts\python -c "from nova.core.config import load_settings; from nova.llm.registry import create_provider; p=create_provider(load_settings().llm); print([m.name for m in p.list_models()])"
+
+# Smoke test de herramientas (sin LLM)
+.\.venv\Scripts\python -c "from nova.core.config import load_settings; from nova.core.audit import AuditLog; from nova.tools import ToolRunner, registry; from nova.tools.permissions import PermissionSystem; s=load_settings(); r=ToolRunner(registry, PermissionSystem(s.permissions), AuditLog(s.audit.file)); print(r.run('calculate', {'expression': '2+2'}))"
 ```
 
 ## Estructura
 
 ```
 nova/
-  core/      config.py, logging.py, session.py   (nada depende de aquí hacia arriba)
+  core/      config.py, logging.py, session.py, audit.py   (nada depende de aquí hacia arriba)
   llm/       base.py (interfaz), ollama.py, registry.py
+  tools/     base.py, standard.py, registry.py, permissions.py, runner.py
   cli/       chat.py
 tests/       pytest
 config/      config.yaml
@@ -29,9 +33,10 @@ docs/        documentación
 
 - Python 3.11 con type hints (`from __future__ import annotations`).
 - Sin comentarios en código salvo docstrings de interfaz cuando aportan.
-- Importable y testeable: inyección de dependencias (p. ej. `OllamaProvider` acepta un `httpx.Client` para tests).
-- Errores de proveedores envueltos en `NOVAProviderError` (nunca HTTP/httpx crudo fuera de `nova.llm`).
+- Importable y testeable: inyección de dependencias (p. ej. `OllamaProvider` acepta un `httpx.Client` para tests; `ToolRunner` acepta registry/permisos/audit/confirm).
+- Errores de proveedores envueltos en `NOVAProviderError` (nunca HTTP/httpx crudo fuera de `nova.llm`); errores de herramientas en `ToolError`.
 - Config solo vía `config/config.yaml` o env `NOVA_*`: nada de valores de modelo en el código.
+- Las herramientas nunca tocan el sistema sin pasar por `PermissionSystem` + `ToolRunner`; toda ejecución queda en el audit log.
 
 ## Ciclo por fase
 

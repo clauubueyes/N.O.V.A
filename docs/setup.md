@@ -49,7 +49,17 @@ set NOVA_LLM_DEFAULT_MODEL=qwen2.5-coder:7b          # cmd
 .\.venv\Scripts\python -m nova
 ```
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/help`.
+
+### Ejemplos de herramientas
+
+```text
+/run calculate {"expression":"2+2"}
+/run date_time {"format":"%Y-%m-%d %H:%M:%S"}
+/run list_dir {"path":"C:/Users/Usuario/Desktop"}
+```
+
+Si la herramienta no está en `permissions.allow`, el Permission System preguntará antes de ejecutarla (`[y/N]`).
 
 ## Tests
 
@@ -61,4 +71,5 @@ El test de integración contra Ollama se omite automáticamente si Ollama no res
 
 ## Logs
 
-`logs/nova.log` (archivo rotativo, 2 MB x 3 backups). Nivel configurable en `config/config.yaml` -> `logging.level`.
+- `logs/nova.log` — logging de la aplicación (archivo rotativo, 2 MB x 3 backups). Nivel configurable en `config/config.yaml` -> `logging.level`.
+- `logs/audit.nova.jsonl` — audit de cada ejecución de herramienta (decisión, argumentos, resultado, duración; rotativo 2 MB x 3).

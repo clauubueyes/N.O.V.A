@@ -20,3 +20,18 @@ session:
   system_prompt: >
     You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal AI
     assistant running locally. Be concise, precise and helpful.
+
+permissions:
+  # autonomy: off | ask | full
+  #   off  -> only tools listed in `allow` may run (everything else denied)
+  #   ask  -> tools in `allow` run directly, `deny` is blocked, the rest ask
+  #   full -> everything not denied runs directly
+  autonomy: ask
+  allow:
+    - date_time
+    - calculate
+  deny: []
+
+audit:
+  # Every tool execution decision is recorded here (JSON lines, rotated).
+  file: logs/audit.nova.jsonl

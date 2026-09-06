@@ -17,14 +17,16 @@ Fases progresivas. Cada fase pasa por: ANALIZAR -> IMPLEMENTAR -> TESTEAR -> REV
 - [x] Context manager (`ChatSession` con historial acotado).
 - [x] Logging (consola + archivo rotativo).
 
-## PHASE 2 — Tool System ⏳ (siguiente)
+## PHASE 2 — Tool System ✅
 
-- [ ] Sistema de herramientas (`nova.tools`).
-- [ ] Schemas Pydantic por herramienta.
-- [ ] Validación de argumentos.
-- [ ] Ejecución y resultados tipados.
-- [ ] **Permission System**: niveles de autonomía, allow/deny/preguntar.
-- [ ] Registro (audit log) de todas las ejecuciones.
+- [x] Sistema de herramientas (`nova.tools`).
+- [x] Schemas Pydantic por herramienta.
+- [x] Validación de argumentos.
+- [x] Ejecución y resultados tipados.
+- [x] **Permission System**: niveles de autonomía (`off`/`ask`/`full`), allow/deny.
+- [x] Registro (audit log) de todas las ejecuciones.
+
+> Estado: la selección automática de herramientas por parte del LLM se aborda con Agents (PHASE 5).
 
 ## PHASE 3 — Memory
 

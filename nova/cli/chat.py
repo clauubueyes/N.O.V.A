@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import json
 import sys
 
+from nova.core.audit import AuditLog
 from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.base import NOVAProviderError
 from nova.llm.registry import create_provider
+from nova.tools import ToolResult, registry as tool_registry
+from nova.tools.permissions import PermissionSystem
+from nova.tools.runner import ToolRunner
 
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
-| Phase 1 - N.O.V.A. Core | local LLM via Ollama               |
+| Phase 2 - Tool System | local LLM via Ollama                 |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -20,7 +25,18 @@ Commands:
   /clear            clear conversation context (keeps system prompt)
   /models           list available Ollama models
   /model <name>     switch model for current session
+  /tools            list registered tools
+  /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
   /help             show this help"""
+
+
+def _format_result(result: ToolResult) -> str:
+    if not result.ok:
+        return f"[{result.tool} error] {result.message}"
+    if result.data:
+        pretty = json.dumps(result.data, ensure_ascii=False, default=str, indent=2)
+        return f"[{result.tool} ok] {result.message}\n{pretty}"
+    return f"[{result.tool} ok] {result.message or 'done'}"
 
 
 def main() -> int:
@@ -34,6 +50,13 @@ def main() -> int:
         system_prompt=settings.session.system_prompt,
     )
     current_model = settings.llm.default_model
+
+    tools_runner = ToolRunner(
+        registry=tool_registry,
+        permissions=PermissionSystem(settings.permissions),
+        audit=AuditLog(settings.audit.file),
+        confirm=lambda question: input(question).strip().lower() in ("y", "yes", "s", "si"),
+    )
 
     print(BANNER)
     print(f"Model: {current_model}. Type /help for commands.")
@@ -78,6 +101,27 @@ def main() -> int:
                         print(f"[model -> {current_model}]")
                     else:
                         print(f"Current model: {current_model}")
+                elif command == "tools":
+                    for tool in tool_registry.all():
+                        print(f"  - {tool.name:<12} {tool.description}")
+                elif command == "run":
+                    if len(parts) < 2:
+                        print("Usage: /run <tool> <json args>   e.g. /run calculate {\"expression\":\"2+2\"}")
+                        continue
+                    tool_name = parts[1]
+                    raw_args = line.split(None, 2)
+                    args: dict = {}
+                    if len(raw_args) >= 3:
+                        try:
+                            args = json.loads(raw_args[2])
+                        except json.JSONDecodeError as exc:
+                            print(f"[parse error] {exc}")
+                            continue
+                        if not isinstance(args, dict):
+                            print("[parse error] arguments must be a JSON object")
+                            continue
+                    result = tools_runner.run(tool_name, args)
+                    print(_format_result(result))
                 elif command == "help":
                     print(HELP)
                 else:
