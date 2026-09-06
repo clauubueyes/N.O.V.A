@@ -100,3 +100,15 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   3. El agente inyecta en el system prompt su perfil + schemas JSON de sus tools (`BaseTool.json_schema()`), alimenta cada resultado como mensaje `tool`, y delega TODA ejecución al `ToolRunner` (Permission System + audit): el LLM **propone**, N.O.V.A. **decide**.
 - **Consecuencias:** nuevo módulo `nova.agents` reutilizando `ChatSession`, `MemoryService` y `ToolRunner` (sin duplicar Core); `create_agent`/`agent_presets` para el CLI/API/web. Añadir un agente = añadir un `AgentPreset`. El bucle de steps está acotado para evitar bucles infinitos; el `max_steps` se expone al instanciar.
 - **Estado:** aceptada.
+
+## ADR-013 — Local-first, coste cero y privacidad como restricción arquitectónica
+
+- **Fecha:** 2026-09-07
+- **Contexto:** la visión de producto exige que N.O.V.A. sea usable sin APIs de pago; el coste de inferencia debe recaer en el dispositivo del usuario cuando sea posible, y en infraestructura gratuita/open source cuando la modalidad remota lo requiera.
+- **Decisión:** N.O.V.A. es **local-first**: 
+  1. El proveedor principal es `ollama` (modelos locales/OSS); la interfaz `LLMProvider` ya lo permite.
+  2. El Core **nunca depende** de servicios de pago. Cualquier API cloud es **integración opcional** que solo se activa si el usuario la configura explícitamente y que degrada con elegancia (el modelo diario sigue siendo local).
+  3. Eficiencia como requisito: el **Model Router** (PHASE 7) seleccionará modelo por tarea y por capacidad del dispositivo (RAM/VRAM/CPU/GPU) para no derrochar recursos.
+  4. Privacidad por defecto: datos locales; nada abandona el dispositivo sin consentimiento; sin telemetría; secretos fuera de Git.
+- **Consecuencias:** cualquier funcionalidad futura (voz, web tools, desktop agent, acceso remoto) se diseña priorizando OSS/gratuito; si algo requiere infraestructura que cuesta dinero, primero se busca alternativa gratuita y, si no existe, se documenta como limitación y se convierte en opcional. Los ADR futuros de cada fase deben alinearse con esta restricción.
+- **Estado:** aceptada.

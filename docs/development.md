@@ -61,3 +61,10 @@ docs/        documentación
 
 - Linter/formatter: `ruff` (añadir cuando los archivos lo justifiquen).
 - Coverage: `pytest --cov` (también más adelante).
+- `LICENSE` pendiente de decisión (ver `docs/decisions.md` ADR-013/estrategia).
+- Limpiar los 2 warnings de deprecación de los tests (starlette/httpx-testclient y anyio).
+- Unificar `requirements.txt`/`requirements-dev.txt` con `pyproject.toml` (evitar drift).
+
+## Prioridad de tests (establecida por la visión)
+
+1. Core -> 2. Ollama provider -> 3. Abstracción de modelo -> 4. Tool system -> 5. Permission system -> 6. Memory -> 7. Agent system -> 8. API -> 9. Desktop Agent (PHASE 6, futuro). Las funcionalidades críticas (permisos, audit, memoria, routing) llevan tests automáticos.

@@ -2,6 +2,21 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [Unreleased] — Dirección estratégica (documentación)
+
+Sin cambios de código. Análisis completo del repositorio y alineación con la visión de producto:
+
+- **Estrategia fijada**: N.O.V.A. es **local-first, gratuito y privado** — la inferencia corre en el dispositivo del usuario (Ollama); las APIs de pago son integración opcional que nunca bloquea el Core. Registrado como ADR-013.
+- **Roadmap reconciliado**: la numeración del proyecto (PHASE 0-5 completas) se mantiene y las fases futuras de la visión se mapean a PHASE 6-12 (Desktop Agent, Model Router + Resource Manager, Acceso remoto/auth, Web tools, Voice, Plugins, Automatización avanzada).
+- **Nueva documentación**: `docs/security.md` (modelo de seguridad y permisos) y `docs/models.md` (modelos y política de selección).
+- **Actualizados**: `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/setup.md`, `docs/development.md`, `docs/decisions.md` (ADR-013).
+
+### Pendientes detectados (no implementados, a la espera de aprobación)
+
+- `LICENSE` inexistente (decisión de licencia pendiente de aprobación).
+- 2 warnings de deprecación en tests (starlette/httpx y anyio) — limpieza menor.
+- `requirements.txt`/`requirements-dev.txt` duplican `pyproject.toml` — posible drift futuro.
+
 ## [0.5.0] - 2026-09-07
 
 ### Añadido — PHASE 5: Agents

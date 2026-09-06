@@ -120,6 +120,13 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/agents/coding/chat 
 
 Si la herramienta no está en `permissions.allow`, el Permission System preguntará antes de ejecutarla (`[y/N]`).
 
+## Red y acceso externo (PHASE 6-8, vista previa)
+
+- La API escucha en `api.host` / `api.port` (por defecto `127.0.0.1` — solo local).
+- Para probarla desde la **LAN** (móvil propio), cambia `api.host: 0.0.0.0` en `config/config.yaml`.
+- ⚠️ **No compartas la API en Internet sin autenticación**: la capa de auth/token y recomendaciones TLS llegan en PHASE 8 (`docs/security.md`). Hoy la API no pide token.
+- El **Desktop Agent** (PHASE 6) y los **web tools** (PHASE 9) seguirán el mismo principio: las herramientas viven en el dispositivo y solo se ejecutan bajo el Permission System.
+
 ## Tests
 
 ```powershell

@@ -2,17 +2,23 @@
 
 **N.O.V.A. = Neural Operations & Virtual Assistant**
 
-Asistente personal de IA inspirado en JARVIS pero completamente original. Construido alrededor de **Ollama** (modelos locales), con arquitectura en capas que separa la **inteligencia** de la **ejecución** sobre el sistema.
+Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-> Estado actual: **PHASE 5 — Agents** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, y **agentes** que seleccionan herramientas automáticamente con el LLM como proponente).
+> Estado actual: **PHASE 5 — Agents** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, y **agentes** que seleccionan herramientas automáticamente con el LLM como proponente). Siguiente: PHASE 6 — Desktop Agent (ver [docs/roadmap.md](docs/roadmap.md)).
 
 ## Principio fundamental
 
 El modelo de IA **propone**; N.O.V.A. **decide** y los sistemas externos **ejecutan** bajo permisos. El LLM jamás tiene control directo e ilimitado del ordenador.
 
 ```
-Usuario -> N.O.V.A. -> LLM (Ollama) -> Orchestrator -> Permission System -> Tool -> Sistema -> Resultado -> N.O.V.A. -> Usuario
+Usuario -> N.O.V.A. -> LLM (local) -> N.O.V.A. Core -> Permission System -> Tool -> Sistema -> Resultado -> N.O.V.A. -> Usuario
 ```
+
+## Compromiso: gratuito y privado
+
+- N.O.V.A. **funciona sin APIs de pago**: la inferencia corre en el dispositivo del usuario (Ollama + modelos locales/OSS).
+- Los datos del usuario permanecen locales siempre que sea posible; nada sale del dispositivo sin consentimiento explícito.
+- Las APIs cloud son **integración opcional en el futuro**, solo si el usuario la configura; el Core nunca depende de ellas (ver [docs/security.md](docs/security.md) y [docs/models.md](docs/models.md)).
 
 ## Quickstart
 
@@ -63,7 +69,7 @@ En la web usa el selector de agente; por API, `GET /v1/agents` y `POST /v1/agent
 config/config.yaml    Configuración externa (modelos, permissions, audit, memory, api; nunca en código)
 nova/
   core/              Config, logging, contexto de conversación (ChatSession), audit log
-  llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro
+  llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro (+ Model Router en PHASE 7)
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
@@ -73,15 +79,29 @@ docs/                Documentación del proyecto
 tests/               Tests pytest
 ```
 
+Arquitectura objetivo (evolución, no un salto de golpe):
+
+```
+         N.O.V.A. Core
+      ┌──────┼──────┐
+   Memory  Agents  Tools
+      └──────┼──────┘
+        Model Router
+      ┌──────┼──────┐
+    Ollama  Locales  Cloud (SOLO si el usuario lo configura)
+```
+
 ## Documentación
 
 | Documento | Descripción |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | Arquitectura y capas |
+| [docs/architecture.md](docs/architecture.md) | Arquitectura y capas (actual + objetivo) |
 | [docs/roadmap.md](docs/roadmap.md) | Roadmap por fases |
 | [docs/setup.md](docs/setup.md) | Instalación y configuración |
 | [docs/development.md](docs/development.md) | Guía de desarrollo |
 | [docs/decisions.md](docs/decisions.md) | Decisiones arquitectónicas (ADR) |
+| [docs/security.md](docs/security.md) | Modelo de seguridad y permisos |
+| [docs/models.md](docs/models.md) | Modelos y política de selección |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Problemas comunes |
 | [docs/api.md](docs/api.md) | APIs internas y externas |
 | [CHANGELOG.md](CHANGELOG.md) | Historial de cambios |

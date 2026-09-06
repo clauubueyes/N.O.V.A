@@ -154,9 +154,42 @@ Web / cliente -> FastAPI (nova.api.app)
 Crear una sesión con `{"agent": "research"}` hace que `/chat` use `Agent.act` y devuelva los `steps`
 de cada tool además de la respuesta. En la web, el selector de agente decide con qué presets habla la sesión.
 
+## Arquitectura objetivo (evolución incremental)
+
+La visión de producto mapea sobre esta estructura sin saltos de arquitectura:
+
+```
+                     N.O.V.A.
+                        │
+                 N.O.V.A. Core  (orquestación, contexto, sesión, audit)
+                        │
+         ┌──────────────┼──────────────┐
+         │              │              │
+      Memory          Agents         Tools
+         │              │              │
+         └──────────────┼──────────────┘
+                        │
+                  Model Router  (PHASE 7)
+                        │
+          ┌─────────────┼─────────────┐
+          │             │             │
+       Ollama       Other Local    Optional
+       Models        Providers      Cloud APIs
+                                      │
+                             SOLO si el usuario lo configura (ADR-013)
+```
+
+Estado de cada pieza hoy: **Memory** ✅ (PHASE 3, SQLite + embeddings), **Agents** ✅ (PHASE 5),
+**Tools + Permission System + audit** ✅ (PHASE 2), **Model Router** ⏳ (PHASE 7), **Cloud** ❌ no está
+presente ni se asume — el Core funciona 100% local y gratuito.
+
+El **Desktop Agent** (PHASE 6) conecta la misma ruta `Usuario -> Core -> Permission System -> Tool`
+desde el ordenador del usuario (host), reutilizando el `ToolRunner` existente; en PHASE 8 el móvil
+accederá a través de la API con el Desktop Agent como brazo de ejecución del host.
+
 ## Caminos futuros (incremental)
 
-- **PHASE 6-9** — voz, automatizaciones, plugins y autonomía avanzada (planificación, workflows multi-step).
+- **PHASE 6-12** — Desktop Agent (control del host seguro), Model Router + Resource Manager, acceso remoto con auth, web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
 
 ## Restricciones de diseño
 
