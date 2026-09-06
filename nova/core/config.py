@@ -57,6 +57,11 @@ class MemorySettings(BaseSettings):
     similarity_threshold: float = 0.3
 
 
+class APISettings(BaseSettings):
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -68,6 +73,7 @@ class NovaSettings(BaseSettings):
     permissions: PermissionSettings = PermissionSettings()
     audit: AuditSettings = AuditSettings()
     memory: MemorySettings = MemorySettings()
+    api: APISettings = APISettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -98,6 +104,10 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "session_id": "session_id",
         "max_context": "max_context",
         "similarity_threshold": "similarity_threshold",
+    },
+    "api": {
+        "host": "host",
+        "port": "port",
     },
 }
 

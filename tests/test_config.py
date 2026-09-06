@@ -27,6 +27,8 @@ def test_defaults_when_no_config_file(tmp_path, monkeypatch) -> None:
     assert settings.memory.session_id == "default"
     assert settings.memory.max_context == 3
     assert settings.memory.similarity_threshold == 0.3
+    assert settings.api.host == "127.0.0.1"
+    assert settings.api.port == 8000
 
 
 def test_config_file_overrides_defaults(tmp_path, monkeypatch) -> None:

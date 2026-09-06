@@ -51,3 +51,12 @@ settings = load_settings(path="C:/ruta/a/config.yaml")
 ## La consola muestra caracteres raros
 
 El CLI usa solo ASCII de forma deliberada (compatibilidad con consolas Windows cp1252). No es un bug.
+
+## `nova-api` no arranca / puerto ocupado
+
+El puerto por defecto es `8000`. Si está ocupado, cambia `config/config.yaml` -> `api.port` o usa la env `NOVA_API_PORT`:
+
+```powershell
+$env:NOVA_API_PORT = "8080"
+.\.venv\Scripts\nova-api
+```

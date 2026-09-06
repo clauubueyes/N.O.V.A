@@ -2,6 +2,27 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.4.0] - 2026-09-07
+
+### Añadido — PHASE 4: Interface
+
+- **API REST** (`nova/api/app.py`): app FastAPI (`create_app`) que reutiliza el Core (LLM, `ChatSession`, memoria, `ToolRunner`). Endpoints:
+  - `GET /healthz` — salud, estado del proveedor y versión.
+  - `GET /v1/models`, `GET /v1/tools` — modelos y herramientas registradas (estándar + memoria).
+  - `POST /v1/chat` — completado stateless (mensajes completos, OpenAI-compatible ligero).
+  - `POST /v1/sessions` — crea sesión; `POST /v1/sessions/{id}/chat` — turno con sesión y memoria (inyección de contexto); `GET /v1/sessions/{id}/messages`; `DELETE /v1/sessions/{id}`.
+  - `POST /v1/sessions/{id}/run` — ejecuta una herramienta bajo el Permission System (en la API un `ASK` se resuelve como denegado).
+  - `POST /v1/sessions/{id}/remember` y `GET /v1/sessions/{id}/memory?q=` — memoria explícita y recuperación.
+- **Interfaz web** (`nova/api/static/index.html`): chat HTML/JS (sin CDNs) servido en `/`; crea sesión, envía mensajes, lista modelos/herramientas y muestra el contexto inyectado.
+- **Servidor** (`nova/api/server.py`): entry point `nova-api` con `uvicorn`; `APISettings` (`api.host`, `api.port`) con env `NOVA_API_HOST`/`NOVA_API_PORT`; documentación OpenAPI en `/docs`.
+- **Tests**: 18 tests con `fastapi.testclient` (health, modelos, herramientas, chat stateless y por sesión, memoria recuperando contexto, run de herramientas con permisos, 404/502).
+- Dependencias nuevas: `fastapi>=0.115`, `uvicorn>=0.30` (previstas en ADR-001 para PHASE 4).
+
+### Notas
+
+- Decisión ADR-011 (API FastAPI stateless + sesiones con memoria por petición) en `docs/decisions.md`.
+- Actualizados `docs/architecture.md`, `docs/api.md`, `docs/roadmap.md`, `docs/setup.md` y `README.md`.
+
 ## [0.3.0] - 2026-09-07
 
 ### Añadido — PHASE 3: Memory

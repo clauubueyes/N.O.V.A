@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N.O.V.A. — web chat</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: #10131a; color: #d7dce5;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 1px solid #2a3242; background: #171c26; flex-shrink: 0;
+  }
+  header h1 { font-size: 16px; margin: 0; color: #7fd1ff; letter-spacing: 1px; }
+  header .model { color: #8a93a6; font-size: 12px; }
+  nav { margin-left: auto; display: flex; gap: 8px; }
+  nav button {
+    background: #232a38; color: #d7dce5; border: 1px solid #343d50;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  }
+  nav button:hover { background: #2c3547; }
+  #log {
+    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg { max-width: 78%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; font-size: 13px; }
+  .user { align-self: flex-end; background: #1e4d7a; }
+  .assistant { align-self: flex-start; background: #232a38; border: 1px solid #2f3a4f; }
+  .meta { color: #6b7488; font-size: 11px; margin-top: 6px; align-self: flex-start; }
+  #compose {
+    display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #2a3242;
+    background: #171c26; flex-shrink: 0;
+  }
+  #input {
+    flex: 1; background: #10131a; color: #d7dce5; border: 1px solid #343d50;
+    border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 13px;
+  }
+  #input:focus { outline: none; border-color: #7fd1ff; }
+  #compose button {
+    background: #16537e; color: #fff; border: none; border-radius: 8px; padding: 0 20px;
+    cursor: pointer; font-size: 13px;
+  }
+  #compose button:disabled { background: #2a3242; color: #6b7488; cursor: wait; }
+  dialog { width: 420px; border: 1px solid #343d50; border-radius: 10px; background: #171c26; color: #d7dce5; }
+  dialog h2 { font-size: 14px; margin: 0 0 10px; color: #7fd1ff; }
+  dialog ul { margin: 0; padding: 0 0 0 18px; font-size: 12px; }
+  dialog li { margin: 4px 0; }
+  dialog .close { margin-top: 12px; background: #232a38; color: #d7dce5; border: 1px solid #343d50; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>N.O.V.A.</h1>
+  <span class="model" id="model">conectando...</span>
+  <nav>
+    <button id="btn-models" type="button">modelos</button>
+    <button id="btn-tools" type="button">herramientas</button>
+  </nav>
+</header>
+
+<div id="log">
+  <div class="meta">Nueva sesión creada. Escribe un mensaje para empezar.</div>
+</div>
+
+<dialog id="panel">
+  <h2 id="panel-title"></h2>
+  <ul id="panel-list"></ul>
+  <button class="close" type="button">cerrar</button>
+</dialog>
+
+<form id="compose">
+  <input id="input" placeholder="Escribe tu mensaje..." autocomplete="off" autofocus>
+  <button id="send" type="submit">Enviar</button>
+</form>
+
+<script>
+  "use strict";
+
+  const log = document.getElementById("log");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+  const model = document.getElementById("model");
+  let sessionId = null;
+
+  function append(kind, text) {
+    const node = document.createElement("div");
+    node.className = "msg " + (kind === "user" ? "user" : "assistant");
+    node.textContent = text;
+    log.appendChild(node);
+    log.scrollTop = log.scrollHeight;
+    return node;
+  }
+
+  function appendMeta(text) {
+    const node = document.createElement("div");
+    node.className = "meta";
+    node.textContent = text;
+    log.appendChild(node);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function json(method, path, body) {
+    const options = { method, headers: {} };
+    if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(path, options);
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || response.statusText);
+    }
+    return response.json();
+  }
+
+  function showPanel(title, items) {
+    const dialog = document.getElementById("panel");
+    document.getElementById("panel-title").textContent = title;
+    const list = document.getElementById("panel-list");
+    list.replaceChildren();
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    }
+    dialog.showModal();
+  }
+
+  async function boot() {
+    try {
+      const created = await json("POST", "/v1/sessions");
+      sessionId = created.session_id;
+      const health = await json("GET", "/healthz");
+      model.textContent = "modelo: " + created.model + " | estado: " + health.status;
+    } catch (error) {
+      appendMeta("No se pudo iniciar sesion: " + error.message);
+    }
+  }
+
+  document.getElementById("compose").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const message = input.value.trim();
+    if (!message || !sessionId) return;
+    input.value = "";
+    send.disabled = true;
+    append("user", message);
+    try {
+      const data = await json("POST", "/v1/sessions/" + sessionId + "/chat", { message });
+      append("assistant", data.reply);
+      if (data.context) appendMeta("contexto recuperado:\n" + data.context);
+    } catch (error) {
+      appendMeta("[error] " + error.message);
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  });
+
+  document.getElementById("btn-models").addEventListener("click", async () => {
+    try {
+      const models = await json("GET", "/v1/models");
+      showPanel(
+        "Modelos disponibles",
+        models.length ? models.map((m) => m.name + "  (" + (m.size / 1048576).toFixed(0) + " MB)") : ["ninguno"]
+      );
+    } catch (error) {
+      appendMeta("[error] " + error.message);
+    }
+  });
+
+  document.getElementById("btn-tools").addEventListener("click", async () => {
+    try {
+      const tools = await json("GET", "/v1/tools");
+      showPanel(
+        "Herramientas",
+        tools.map((t) => t.name + " — " + t.description)
+      );
+    } catch (error) {
+      appendMeta("[error] " + error.message);
+    }
+  });
+
+  const dialog = document.getElementById("panel");
+  dialog.querySelector(".close").addEventListener("click", () => dialog.close());
+
+  boot();
+</script>
+</body>
+</html>

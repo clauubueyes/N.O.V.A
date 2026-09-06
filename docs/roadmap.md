@@ -38,11 +38,14 @@ Fases progresivas. Cada fase pasa por: ANALIZAR -> IMPLEMENTAR -> TESTEAR -> REV
 
 > Nota: la suma/resumen semántico de conversaciones largas (compresión de memoria) se puede abordar en PHASE 5 (Agents) con una etapa de "compaction".
 
-## PHASE 4 — Interface
+## PHASE 4 — Interface ✅
 
-- [ ] API REST (FastAPI).
-- [ ] Interfaz web/escritorio.
-- [ ] Comunicación con el Core.
+- [x] API REST (FastAPI) en `nova/api`: chat stateless y por sesión, modelos, herramientas, memoria, salud.
+- [x] Interfaz web (HTML/JS vanilla servida por la API en `/`).
+- [x] Comunicación con el Core: la API reutiliza `ChatSession`, `MemoryService` y `ToolRunner` con el mismo Permission System y audit.
+- [x] Documentación OpenAPI automática en `/docs`.
+
+> Nota: interfaz de escritorio (sistemas) se puede abordar más adelante como cliente de esta API; la web cubre el caso funcionante.
 
 ## PHASE 5 — Agents
 

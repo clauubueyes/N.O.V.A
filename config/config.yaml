@@ -46,3 +46,8 @@ memory:
   max_context: 3
   # Minimum cosine similarity for a memory to be considered relevant.
   similarity_threshold: 0.3
+
+api:
+  # PHASE 4 — REST API + web interface (nova-api).
+  host: 127.0.0.1
+  port: 8000

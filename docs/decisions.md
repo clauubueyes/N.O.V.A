@@ -81,3 +81,11 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
 - **Decisión:** `MemoryStore` sobre **SQLite** (`memory/nova.db`, stdlib `sqlite3`) con dos tablas (`memories`, `transcripts`). Los embeddings (`LLMProvider.embed_text` vía `/api/embed`, `nomic-embed-text`) se guardan como JSON por fila y la recuperación rankea por **similitud coseno** en Python (O(n) por consulta, suficiente a esta escala). Si el proveedor no soporta embeddings o fallan, se cae a **keywords**; la memoria nunca interrumpe el diálogo.
 - **Consecuencias:** cero dependencias nuevas; migrar a una vector DB real en el futuro solo toca `MemoryRetriever`. El contexto recuperado se inyecta como mensaje `system` antes del turno del usuario.
 - **Estado:** aceptada.
+
+## ADR-011 — API REST stateless + sesiones con estado del Core por petición
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 4 necesita exponer N.O.V.A. como servicio (API + web) sin duplicar la lógica del Core.
+- **Decisión:** FastAPI en `nova/api` (ADR-001 lo fijaba para esta fase). Dos modos: `POST /v1/chat` stateless (mensajes completos, passthrough al provider) y `POST /v1/sessions/{id}/chat` que reutiliza `ChatSession` + `MemoryService` + `ToolRunner` (una sesión de API = un `ChatSession` + una memoria con `session_id` propio). El contexto se inyecta igual que en el CLI. La API nunca interactúa en vivo: un `ASK` se deniega (confirm = False).
+- **Consecuencias:** añadir un cliente (web, escritorio, script) = llamar a la API; la lógica (permisos, audit, memoria) sigue viviendo en el Core y se testea con `fastapi.testclient` inyectando un provider falso.
+- **Estado:** aceptada.

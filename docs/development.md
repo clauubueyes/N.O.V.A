@@ -24,6 +24,7 @@ nova/
   llm/       base.py (interfaz), ollama.py, registry.py
   memory/    store.py (SQLite), retriever.py, service.py, tools.py
   tools/     base.py, standard.py, registry.py, permissions.py, runner.py
+  api/       app.py (FastAPI), server.py (uveicorn), schemas.py, static/index.html
   cli/       chat.py
 tests/       pytest
 config/      config.yaml

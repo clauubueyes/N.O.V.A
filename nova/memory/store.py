@@ -59,7 +59,9 @@ class MemoryStore:
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.path = str(db_path)
-        self._conn = sqlite3.connect(self.path)
+        # check_same_thread=False: FastAPI/uvicorn puede atender peticiones de la misma
+        # sesión desde hilos distintos del threadpool. SQLite serializa a nivel de archivo.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.executescript(_SCHEMA)
 
     def add_memory(

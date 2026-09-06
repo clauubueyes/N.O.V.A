@@ -1,6 +1,6 @@
 # API
 
-Estado: **PHASE 3**. N.O.V.A. expone API **interna** de Python (y un CLI). La API REST (FastAPI) llega en **PHASE 4** junto con la interfaz web/escritorio.
+Estado: **PHASE 4**. N.O.V.A. expone API **interna** de Python, un CLI y una **API REST** (FastAPI) con interfaz web.
 
 ## Proveedor LLM — `nova.llm.base`
 
@@ -62,9 +62,11 @@ s.memory.db_file             # str (memory/nova.db)
 s.memory.session_id          # str
 s.memory.max_context         # int
 s.memory.similarity_threshold # float
+s.api.host                   # str (127.0.0.1)
+s.api.port                   # int (8000)
 ```
 
-Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_EMBEDDING_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`, `NOVA_MEMORY_DB_FILE`, `NOVA_MEMORY_SESSION_ID`, `NOVA_MEMORY_MAX_CONTEXT`, `NOVA_MEMORY_SIMILARITY_THRESHOLD`.
+Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_EMBEDDING_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`, `NOVA_MEMORY_DB_FILE`, `NOVA_MEMORY_SESSION_ID`, `NOVA_MEMORY_MAX_CONTEXT`, `NOVA_MEMORY_SIMILARITY_THRESHOLD`, `NOVA_API_HOST`, `NOVA_API_PORT`.
 
 ## Contexto — `nova.core.session`
 
@@ -211,12 +213,34 @@ result = tools.run("calculate", {"expression": "2+2"})
 print(result.data)   # {"expression": "2+2", "result": 4}
 ```
 
-## Endpoint HTTP
+## Endpoint HTTP — `nova.api` (PHASE 4)
 
-No existe aún. Diseño previsto para PHASE 4:
+Arranque:
 
+```powershell
+.\.venv\Scripts\nova-api        # usa config/config.yaml -> api.host/api.port
+# o
+python -m nova.api.server
 ```
-POST /v1/chat     {"model": "...", "messages": [...]}
-GET  /v1/models
-GET  /healthz
-```
+
+Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` permite inyectar dependencias en tests.
+
+| Método y ruta | Descripción |
+|---|---|
+| `GET /healthz` | Salud: `provider`, `status`, `version`. |
+| `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
+| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`). |
+| `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
+| `POST /v1/sessions` | Crea una sesión -> `{"session_id", "model"}`. |
+| `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria: `{"message", "model"}` -> `{"reply", "context", ...}`. |
+| `GET /v1/sessions/{id}/messages` | Historial de la sesión. |
+| `DELETE /v1/sessions/{id}` | Elimina la sesión. |
+| `POST /v1/sessions/{id}/run` | Ejecuta una herramienta bajo permisos: `{"tool", "args"}` -> `{"result": ToolResult}`. |
+| `POST /v1/sessions/{id}/remember` | Guarda un hecho: `{"content", "kind", "source"}`. |
+| `GET /v1/sessions/{id}/memory?q=` | Sin `q`: memorias recientes; con `q`: búsqueda con contexto. |
+
+Notas:
+
+- El endpoint de sesión reutiliza `ChatSession` + `MemoryService`: cada turno se persiste y se inyecta el contexto relevante antes de llamar al LLM.
+- La API nunca pregunta interactivamente: un permiso `ASK` se resuelve denegado (`result.ok == false`). Las reglas `allow` siguen ejecutando directo (p. ej. `calculate`).
+- Errores del proveedor -> `502`; sesión inexistente -> `404`.

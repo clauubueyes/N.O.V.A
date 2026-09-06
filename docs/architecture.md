@@ -33,7 +33,7 @@ Tool (schema + validación + ejecución + resultado)
 Sistema      -> Resultado -> N.O.V.A. -> Usuario
 ```
 
-## Capas actuales (PHASE 1 + 2 + 3)
+## Capas actuales (PHASE 1 + 2 + 3 + 4)
 
 | Módulo | Responsabilidad |
 |---|---|
@@ -46,13 +46,15 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.llm.registry` | Registro de proveedores por nombre; `create_provider` es la única fábrica usada por todo el código. |
 | `nova.memory.store` | `MemoryStore`: SQLite local (hechos + trascripción de conversación, embeddings opcionales). |
 | `nova.memory.retriever` | Recuperación por similitud coseno sobre embeddings, con fallback a keywords. |
-| `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI y futuros Agents. |
+| `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI, la API y futuros Agents. |
 | `nova.memory.tools` | Herramientas `remember` y `memory_search` (bajo el Permission System). |
 | `nova.tools.base` | `BaseTool` (schema Pydantic + `execute`), `ToolResult`, `ToolError`. |
 | `nova.tools.standard` | Herramientas de ejemplo: `calculate`, `date_time`, `list_dir`. |
 | `nova.tools.registry` | Registro de herramientas por nombre. |
 | `nova.tools.permissions` | `PermissionSystem`: autonomía (`off`/`ask`/`full`) + reglas allow/deny. |
 | `nova.tools.runner` | `ToolRunner`: permiso -> validación -> ejecución, auditando cada paso. |
+| `nova.api.app` | API REST (FastAPI): `create_app` reutiliza el Core; sesiones con memoria y tools por petición. |
+| `nova.api.server` | Entry point `nova-api`: levanta `uvicorn` con `APISettings`. |
 | `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run`). |
 
 ## Desacoplamiento del proveedor LLM
@@ -93,15 +95,28 @@ BaseTool.execute -> ToolResult
 AuditLog (JSON lines) + Resultado -> Usuario
 ```
 
+## API REST y web (PHASE 4)
+
+`nova-api` sirve la web y la API. Cada sesión de API lleva un `ChatSession` + un `MemoryService` (mismo `MemoryStore`, `session_id` propio) + su `ToolRunner`:
+
+```
+Web / cliente -> FastAPI (nova.api.app)
+  |-> POST /v1/sessions/{id}/chat -> ChatSession + MemoryService + Provider (misma lógica que el CLI)
+  |-> POST /v1/sessions/{id}/run   -> ToolRunner (Permission System + audit)
+  |-> POST /v1/chat                -> Provider directo (stateless)
+```
+
+El contexto recuperado se inyecta igual que en el CLI. En la API un `ASK` se deniega (no hay confirmación interactiva); lo que esté en `permissions.allow` corre directo.
+
 ## Caminos futuros (incremental)
 
-- **PHASE 4** — API: `nova.api` (FastAPI, no añadido aún por principio de simplicidad).
 - **PHASE 5-9** — Agents (selección automática de herramientas por el LLM y compresión de memoria), voz, automatizaciones, plugins y autonomía avanzada.
 
 ## Restricciones de diseño
 
-- Sin Redis/Kafka/microservicios/vector DB hasta que exista una necesidad real (SQLite + embeddings locales cubren PHASE 3 — ADR-005/ADR-010).
+- Sin Redis/Kafka/microservicios/vector DB hasta que exista una necesidad real (SQLite + embeddings locales cubren PHASE 3 — ADR-005/ADR-010; FastAPI se añadió en PHASE 4 — ADR-011).
 - Arquitectura sencilla que funcione, antes que enorme que no lo haga.
 - La configuración de modelos vive en `config/config.yaml` (o env), nunca en código.
 - Las herramientas solo se ejecutan tras la decisión explícita o permitida del `PermissionSystem`; toda ejecución queda auditada.
 - La memoria nunca interrumpe el diálogo: si el embedding falla o no existe, se degrada a keywords.
+- La API (y la web) solo hablan con el Core: nunca conocen los detalles de Ollama ni de las herramientas.

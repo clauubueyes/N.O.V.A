@@ -46,13 +46,36 @@ set NOVA_LLM_DEFAULT_MODEL=qwen2.5-coder:7b          # cmd
 
 ## Ejecución
 
+CLI interactivo:
+
 ```powershell
 .\.venv\Scripts\nova
 # o
 .\.venv\Scripts\python -m nova
 ```
 
+API REST + interfaz web (PHASE 4):
+
+```powershell
+.\.venv\Scripts\nova-api
+# o
+.\.venv\Scripts\python -m nova.api.server
+```
+
+Abre `http://127.0.0.1:8000/` (chat web) o `http://127.0.0.1:8000/docs` (OpenAPI). Host/puerto en `config/config.yaml` -> `api` o con `NOVA_API_HOST` / `NOVA_API_PORT`.
+
 Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/help`.
+
+### Ejemplos de la API
+
+```powershell
+# Salud
+Invoke-RestMethod -Uri http://127.0.0.1:8000/healthz
+# Crear sesión y chatear
+$s = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/sessions
+$body = @{ message = "Hola" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/v1/sessions/$($s.session_id)/chat" -ContentType "application/json" -Body $body
+```
 
 ### Ejemplos de herramientas
 

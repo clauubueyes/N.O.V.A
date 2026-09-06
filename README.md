@@ -4,7 +4,7 @@
 
 Asistente personal de IA inspirado en JARVIS pero completamente original. Construido alrededor de **Ollama** (modelos locales), con arquitectura en capas que separa la **inteligencia** de la **ejecución** sobre el sistema.
 
-> Estado actual: **PHASE 3 — Memory** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, y memoria persistente con recuperación por embeddings).
+> Estado actual: **PHASE 4 — Interface** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, y API REST + interfaz web).
 
 ## Principio fundamental
 
@@ -20,6 +20,12 @@ Usuario -> N.O.V.A. -> LLM (Ollama) -> Orchestrator -> Permission System -> Tool
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\nova
+```
+
+Interfaz web y API REST:
+
+```powershell
+.\.venv\Scripts\nova-api     # sirve http://127.0.0.1:8000/ (UI) y /docs (OpenAPI)
 ```
 
 Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords).
@@ -42,14 +48,14 @@ N.O.V.A. guarda cada conversación y, cuando preguntes algo, inyecta automática
 ## Proyecto
 
 ```
-config/config.yaml    Configuración externa (modelos, permissions, audit, memory; nunca en código)
+config/config.yaml    Configuración externa (modelos, permissions, audit, memory, api; nunca en código)
 nova/
   core/              Config, logging, contexto de conversación (ChatSession), audit log
   llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
+  api/               API REST (FastAPI) + interfaz web (PHASE 4)
   cli/               Interfaz de conversación
-  api/               (PHASE 4) API REST
 docs/                Documentación del proyecto
 tests/               Tests pytest
 ```
