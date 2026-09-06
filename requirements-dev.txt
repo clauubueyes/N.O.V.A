@@ -1,0 +1,3 @@
+# N.O.V.A. dev dependencies.
+# Fuente de verdad: pyproject.toml ([project].optional-dependencies.dev).
+pytest>=8

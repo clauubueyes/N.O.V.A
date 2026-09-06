@@ -1,0 +1,52 @@
+# Desarrollo
+
+## Comandos
+
+```powershell
+# Tests
+.\.venv\Scripts\python -m pytest                # con verbose: -v -s
+
+# Chat interactivo
+.\.venv\Scripts\nova
+
+# Dial con Ollama sin CLI (smoke test)
+.\.venv\Scripts\python -c "from nova.core.config import load_settings; from nova.llm.registry import create_provider; p=create_provider(load_settings().llm); print([m.name for m in p.list_models()])"
+```
+
+## Estructura
+
+```
+nova/
+  core/      config.py, logging.py, session.py   (nada depende de aquí hacia arriba)
+  llm/       base.py (interfaz), ollama.py, registry.py
+  cli/       chat.py
+tests/       pytest
+config/      config.yaml
+docs/        documentación
+```
+
+## Convenciones
+
+- Python 3.11 con type hints (`from __future__ import annotations`).
+- Sin comentarios en código salvo docstrings de interfaz cuando aportan.
+- Importable y testeable: inyección de dependencias (p. ej. `OllamaProvider` acepta un `httpx.Client` para tests).
+- Errores de proveedores envueltos en `NOVAProviderError` (nunca HTTP/httpx crudo fuera de `nova.llm`).
+- Config solo vía `config/config.yaml` o env `NOVA_*`: nada de valores de modelo en el código.
+
+## Ciclo por fase
+
+1. **Analizar** el estado actual.
+2. **Implementar** el incremento mínimo.
+3. **Testear** (unit + smoke).
+4. **Revisar** (nueva capa respeta las reglas: separación LLM/orquestación/herramientas/sistema).
+5. **Documentar** (docs + `CHANGELOG.md` + actualizar `docs/roadmap.md`).
+
+## Git
+
+- Commits lógicos y atómicos; mensaje en inglés o español coherente.
+- Nunca commitear `.env`, `config/local.yaml`, `logs/` ni `.venv/`.
+
+## Deuda pendiente (a medida que aplique)
+
+- Linter/formatter: `ruff` (añadir cuando los archivos lo justifiquen).
+- Coverage: `pytest --cov` (también más adelante).

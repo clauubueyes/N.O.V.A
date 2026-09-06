@@ -1,0 +1,7 @@
+# N.O.V.A. runtime dependencies.
+# Fuente de verdad: pyproject.toml ([project].dependencies).
+# Instalar el paquete en modo editable: pip install -e ".[dev]"
+httpx>=0.27
+pydantic>=2.8
+pydantic-settings>=2.4
+PyYAML>=6.0

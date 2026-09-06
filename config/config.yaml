@@ -1,0 +1,22 @@
+# N.O.V.A. configuration
+# Edit this file or override any value with environment variables:
+#   NOVA_LLM_DEFAULT_MODEL=llama3.1:8b
+#   NOVA_LOGGING_LEVEL=DEBUG
+# Model names are configured here, never hardcoded in code.
+
+llm:
+  provider: ollama
+  base_url: http://localhost:11434
+  default_model: llama3.1:8b
+  temperature: 0.7
+  timeout_s: 60.0
+
+logging:
+  level: INFO
+  file: logs/nova.log
+
+session:
+  max_history_messages: 20
+  system_prompt: >
+    You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal AI
+    assistant running locally. Be concise, precise and helpful.

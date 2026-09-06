@@ -1,0 +1,81 @@
+# Roadmap
+
+Fases progresivas. Cada fase pasa por: ANALIZAR -> IMPLEMENTAR -> TESTEAR -> REVISAR -> DOCUMENTAR.
+
+## PHASE 0 — Discovery ✅
+
+- Análisis del repositorio: estaba vacío (solo `.git`, sin commits).
+- Entorno detectado: Python 3.11.9, Node 24, Ollama 0.33.3 con `llama3.1:8b`, `qwen2.5-coder:7b`, `nomic-embed-text`.
+- Decisiones clave documentadas en [decisions.md](decisions.md).
+
+## PHASE 1 — N.O.V.A. Core ✅
+
+- [x] Configuración externa (YAML + env), sin modelos hardcodeados.
+- [x] Ollama provider (desacoplado vía `LLMProvider`).
+- [x] Gestión de modelos (listar, switch de modelo en sesión).
+- [x] Conversación (CLI interactiva).
+- [x] Context manager (`ChatSession` con historial acotado).
+- [x] Logging (consola + archivo rotativo).
+
+## PHASE 2 — Tool System ⏳ (siguiente)
+
+- [ ] Sistema de herramientas (`nova.tools`).
+- [ ] Schemas Pydantic por herramienta.
+- [ ] Validación de argumentos.
+- [ ] Ejecución y resultados tipados.
+- [ ] **Permission System**: niveles de autonomía, allow/deny/preguntar.
+- [ ] Registro (audit log) de todas las ejecuciones.
+
+## PHASE 3 — Memory
+
+- [ ] Memoria de conversación.
+- [ ] Memoria persistente (base local, SQLite candidata).
+- [ ] Contexto y recuperación (embeddings `nomic-embed-text`).
+
+## PHASE 4 — Interface
+
+- [ ] API REST (FastAPI).
+- [ ] Interfaz web/escritorio.
+- [ ] Comunicación con el Core.
+
+## PHASE 5 — Agents
+
+- [ ] General Agent.
+- [ ] Coding Agent.
+- [ ] Research Agent.
+- [ ] System Agent.
+- [ ] Automation Agent.
+
+## PHASE 6 — Voice
+
+- [ ] Speech-to-Text.
+- [ ] Text-to-Speech.
+- [ ] Wake word.
+- [ ] Pipeline de voz.
+
+## PHASE 7 — Automation
+
+- [ ] Automatizaciones.
+- [ ] Tasks.
+- [ ] Eventos.
+- [ ] Schedulers.
+
+## PHASE 8 — Plugins
+
+- [ ] Sistema de plugins.
+- [ ] Integraciones externas.
+- [ ] Nuevas herramientas.
+
+## PHASE 9 — Advanced Autonomy
+
+- [ ] Planificación.
+- [ ] Ejecución de tareas complejas.
+- [ ] Multi-step workflows.
+- [ ] Autonomía configurable.
+
+---
+
+## Notas
+
+- Fases sujetas a revisión según neceidades reales durante el desarrollo.
+- PHASE 2 se priorizó antes que Interface porque las herramientas con permisos son la base de la seguridad del sistema.
