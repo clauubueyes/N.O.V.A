@@ -13,6 +13,7 @@ from nova.llm.registry import create_provider
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.memory.retriever import MemoryHit
 from nova.tools import ToolResult, registry as tool_registry
+from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
@@ -20,7 +21,7 @@ from nova.tools.runner import ToolRunner
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
-| Phase 5 - Agents (automatic tool selection) | local Ollama    |
+| Phase 6 - Desktop Agent (host: open_app/open_url/run) | Ollama |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -31,6 +32,9 @@ Commands:
   /model <name>     switch model for current session
   /tools            list registered tools
   /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
+  /run open_app     launch a configured application (e.g. /run open_app {"app":"notepad"})
+  /run open_url     open a URL in the browser (e.g. /run open_url {"url":"https://example.com"})
+  /run run          execute an allowlisted command (e.g. /run run {"command":"echo","args":["hi"]})
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
   /agents           list available agents
@@ -82,8 +86,9 @@ def main() -> int:
         similarity_threshold=settings.memory.similarity_threshold,
     )
     memory_tools = [RememberTool(memory), MemorySearchTool(memory)]
+    host_tools = all_host_tools(settings.host)
 
-    tools_registry = create_registry(memory_tools, base=tool_registry)
+    tools_registry = create_registry(memory_tools + host_tools, base=tool_registry)
     tools_runner = ToolRunner(
         registry=tools_registry,
         permissions=PermissionSystem(settings.permissions),

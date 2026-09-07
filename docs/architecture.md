@@ -33,7 +33,7 @@ Tool (schema + validación + ejecución + resultado)
 Sistema      -> Resultado -> N.O.V.A. -> Usuario
 ```
 
-## Capas actuales (PHASE 1 + 2 + 3 + 4 + 5)
+## Capas actuales (PHASE 1 + 2 + 3 + 4 + 5 + 6-paso1)
 
 | Módulo | Responsabilidad |
 |---|---|
@@ -50,14 +50,16 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.memory.tools` | Herramientas `remember` y `memory_search` (bajo el Permission System). |
 | `nova.tools.base` | `BaseTool` (schema Pydantic + `execute` + `json_schema()`), `ToolResult`, `ToolError`. |
 | `nova.tools.standard` | Herramientas de ejemplo: `calculate`, `date_time`, `list_dir`. |
+| `nova.tools.host` | Host tools seguro (PHASE 6): `open_app`, `open_url`, `run` — allowlist de comandos y apps configurables, denegadas por defecto. |
 | `nova.tools.registry` | Registro de herramientas por nombre. |
 | `nova.tools.permissions` | `PermissionSystem`: autonomía (`off`/`ask`/`full`) + reglas allow/deny. |
 | `nova.tools.runner` | `ToolRunner`: permiso -> validación -> ejecución, auditando cada paso. |
 | `nova.agents.core` | `Agent`: loop acotado (`max_steps`) que propone tools por JSON estructurado, delega en `ToolRunner` y devuelve `AgentResult` con steps. |
 | `nova.agents.presets` | `AgentPreset` + 5 presets (`general`, `coding`, `research`, `system`, `automation`) + `create_agent`. |
+| `nova.desktop.agent` | Proceso local `nova-agent` (base del Desktop Agent, PHASE 6). |
 | `nova.api.app` | API REST (FastAPI): `create_app` reutiliza el Core; sesiones con memoria y tools por petición, agentes persistentes por nombre. |
 | `nova.api.server` | Entry point `nova-api`: levanta `uvicorn` con `APISettings`. |
-| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run` + `/agents` + `/agent`). |
+| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run` + `/agents` + `/agent`; incluye las host tools). |
 
 ## Desacoplamiento del proveedor LLM
 
@@ -153,6 +155,46 @@ Web / cliente -> FastAPI (nova.api.app)
 
 Crear una sesión con `{"agent": "research"}` hace que `/chat` use `Agent.act` y devuelva los `steps`
 de cada tool además de la respuesta. En la web, el selector de agente decide con qué presets habla la sesión.
+
+## Host tools (PHASE 6, paso 1)
+
+Las host tools (`nova.tools.host`) siguen exactamente la misma ruta que cualquier otra herramienta —
+**LLM propone -> Permission System decide -> `ToolRunner` ejecuta -> Audit registra** — pero añaden una
+segunda barrera de seguridad **independiente del Permission System**:
+
+1. `open_app` — el LLM aporta solo el **nombre** (`app`); la ruta/ejecutable vive en `host.apps` del
+   `config.yaml`. Nombre no configurado = fallo. Nunca una ruta arbitraria del modelo.
+2. `open_url` — la URL debe ser `http`/`https` con host válido; cualquier otro esquema
+   (`file:`, `javascript:`, `data:`, `ftp:`, `ssh:`...) se rechaza antes de abrir el navegador.
+3. `run` — permite **solo** comandos listados en `host.commands` (la base del comando debe coincidir,
+   comparendo sin `.exe` y sin distinción de mayúsculas). Se valida esto **aunque `autonomy: full`**:
+   la allowlist es la barrera del host, no la autonomía. Además:
+   - Se ejecuta **sin shell** (`subprocess` con lista de argumentos; sin inyección).
+   - Timeout configurable (`host.timeout_s`, override por llamada `timeout_s`).
+   - Captura controlada de stdout/stderr (cap 100 KB por stream) + `returncode`.
+   - **Bloqueo duro** (no configurable vía allowlist) de comandos de elevación o destructivos:
+     `runas`, `sudo`, `gsudo`, shells (`cmd`, `powershell`, `bash`, `wsl`...), `format`, `diskpart`,
+     `shutdown`, `reg`, etc.
+   - Sin elevación de privilegios (no se usan `runas`/UAC desde la herramienta).
+
+```
+CLI / nova-agent
+  v
+ToolRunner  (permisos: allow / deny / ask [y/N])
+  v
+Host tool:
+  open_app -> ¿name en host.apps? -> Popen([ejecutable])
+  open_url -> ¿scheme http/https y host? -> webbrowser.open(url)
+  run      -> ¿comando en host.commands y no bloqueado? -> subprocess(lista, timeout) -> stdout/stderr
+  v
+AuditLog (JSON lines) + Resultado -> Usuario
+```
+
+- Las host tools se registran **solo** en CLI y `nova-agent` (proceso local). La API (`nova-api`) no las
+  expone en este paso: sin funcionalidad remota hasta PHASE 8.
+- Config mínima en `config/config.yaml` -> `host`: `apps` (nombre -> ejecutable), `commands` (allowlist),
+  `timeout_s`.
+- Referencias: [security.md](security.md) y [tools.md](tools.md).
 
 ## Arquitectura objetivo (evolución incremental)
 

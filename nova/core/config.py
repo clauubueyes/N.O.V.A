@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 ENV_PREFIX = "NOVA_"
@@ -62,6 +62,24 @@ class APISettings(BaseSettings):
     port: int = 8000
 
 
+class HostSettings(BaseSettings):
+    """PHASE 6 — host/desktop tools configuration.
+
+    `run` only executes base commands listed in `commands` (allowlist; empty = nothing runs)
+    and never elevation commands. `apps` maps an application name to a configured
+    executable/path; the LLM only ever provides the name, never an arbitrary path.
+    """
+
+    apps: dict[str, str] = Field(default_factory=dict)
+    commands: list[str] = Field(default_factory=list)
+    timeout_s: float = 30.0
+
+    @field_validator("apps", "commands", mode="before")
+    @classmethod
+    def _empty_to_default(cls, value: Any) -> Any:
+        return {} if value is None else value
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -74,6 +92,7 @@ class NovaSettings(BaseSettings):
     audit: AuditSettings = AuditSettings()
     memory: MemorySettings = MemorySettings()
     api: APISettings = APISettings()
+    host: HostSettings = HostSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -108,6 +127,11 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "api": {
         "host": "host",
         "port": "port",
+    },
+    "host": {
+        "apps": "apps",
+        "commands": "commands",
+        "timeout_s": "timeout_s",
     },
 }
 

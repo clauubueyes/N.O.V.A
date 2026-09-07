@@ -51,3 +51,24 @@ api:
   # PHASE 4 — REST API + web interface (nova-api).
   host: 127.0.0.1
   port: 8000
+
+host:
+  # PHASE 6 — Desktop Agent host tools. Denied by default: these tools only run
+  # when the base command/app name is configured here AND the tool itself is
+  # allowed (permissions.allow) / confirmed when autonomy=ask.
+  #
+  # open_app: launches a configured executable by name. The LLM only ever
+  #   provides the name — never an arbitrary path. Map the name to a path or a
+  #   plain program name found on PATH:
+  apps:
+    notepad: notepad.exe
+    # chrome: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  #
+  # run: allowlist of base commands that may execute (empty list = nothing runs).
+  #   Destination/elevation commands (runas, sudo, powershell, cmd, format, ...)
+  #   are always blocked. Output is captured with a timeout; no shell is used.
+  commands: []
+    # - echo
+    # - git
+    # - where
+  timeout_s: 30.0

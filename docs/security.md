@@ -26,6 +26,64 @@ LLM -> Tool Request -> PermissionSystem (allow/deny/ask) -> Validation -> (confi
   confirmación: un `ask` se **deniega** (`result.ok == false`); solo corre lo que está en `allow`.
 - Ejemplos por defecto: `date_time` y `calculate` están en `allow`. El agente `system` usa `date_time`.
 
+## Host tools (PHASE 6 — obligatorio)
+
+Las host tools (`open_app`, `open_url`, `run`) **no se ejecutan nunca de forma arbitraria**: además
+del `PermissionSystem` (allow/deny/ask), cada una tiene su propia barrera de seguridad en código,
+**independiente de la autonomía configurada**.
+
+### `open_app` — aplicaciones conocidas, por nombre
+
+- La lista de apps vive en `config/config.yaml` -> `host.apps` (`nombre: ejecutable`). El LLM ofrece
+  **solo el nombre**; si no está configurado -> fallo. **Nunca** acepta una ruta arbitraria del modelo.
+- La ruta es configurada por el usuario (p. ej. `chrome: "C:\\Program Files\\...\\chrome.exe"`).
+
+### `open_url` — solo http(s)
+
+- Se permiten únicamente URLs `http://` / `https://` con host válido. Antes de abrir el navegador se
+  rechazan esquemas peligrosos o inválidos: `file:`, `javascript:`, `data:`, `ftp:`, `ssh:`, URLs sin host, etc.
+- Regla de oro: si el modelo propone una URL sospechosa, la herramienta devuelve error sin abrir nada.
+
+### `run` — terminal por allowlist (denegado por defecto)
+
+- **Allowlist de comandos**: solo se ejecutan comandos cuyo *nombre base* esté en `host.commands`
+  (vacío = nada se ejecuta, **incluso con `autonomy: full`**). La allowlist es por comando base,
+  comparando sin `.exe` y sin distinguir mayúsculas.
+- **Sin shell**: la ejecución usa `subprocess.run([comando, *args], ...)` (lista, sin
+  `shell=True`), por lo que no hay inyección de shell por argumentos.
+- **Timeout configurable**: `host.timeout_s` (defecto 30 s) y override `timeout_s` por llamada; una
+  orden que supera el límite se aborta y se reporta.
+- **Captura controlada**: stdout/stderr se capturan (cap 100 KB por stream) y se devuelven con el
+  `returncode`; sin herencia de terminal y sin comandos interactivos que bloqueen indefinidamente.
+- **Bloqueo duro** (nunca anulable por configuración) de elevación, escape a shell y comandos
+  destructivos: `runas`, `sudo`, `gsudo`, `cmd`, `powershell`, `pwsh`, `bash`, `sh`, `wsl`, `format`,
+  `diskpart`, `bcdedit`, `shutdown`, `restart`, `reg`. La lista vive en
+  `nova.tools.host.terminal.BLOCKED_COMMANDS`.
+- **Sin elevación de privilegios**: la herramienta nunca lanza procesos como administrador.
+
+### Denegada por defecto a nivel de permisos
+
+Aunque la herramienta esté registrada, hace falta además que el `PermissionSystem` la permita:
+con `autonomy: ask`, el CLI pregunta `[y/N]`; puedes dejarlas en `permissions.allow` para que corran
+directo (p. ej. `open_app`, `open_url`) o en `permissions.deny` para bloquearlas siempre.
+
+### Alcance
+
+- Las host tools se registran **solo** en el CLI y en `nova-agent` (proceso local). La API
+  (`nova-api`) **no** las expone en este paso: sin funcionalidad remota hasta PHASE 8.
+- Toda invocación (permitida o denegada) queda en el audit log con decisión, argumentos y resultado.
+
+### Modelo de decisión de una host tool
+
+```
+LLM propone (ej. open_app {app: "chrome"})
+  -> PermissionSystem decide (¿en allow/deny/ask?)
+  -> ToolRunner ejecuta la herramienta
+      -> open_app verifica host.apps / run verifica host.commands
+  -> subprocess/webbrowser (alcance acotado) -> resultado
+  -> Audit registra solicitud y resultado
+```
+
 ## Niveles de riesgo de las herramientas (guía para PHASE 6+)
 
 Cuando se añadan herramientas de host (Desktop Agent), clasificar así:

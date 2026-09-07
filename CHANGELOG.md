@@ -2,20 +2,33 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
-## [Unreleased] — Dirección estratégica (documentación)
+## [0.6.0] - 2026-09-07
 
-Sin cambios de código. Análisis completo del repositorio y alineación con la visión de producto:
+### Añadido — PHASE 6: Desktop Agent (paso 1 — host tools)
 
-- **Estrategia fijada**: N.O.V.A. es **local-first, gratuito y privado** — la inferencia corre en el dispositivo del usuario (Ollama); las APIs de pago son integración opcional que nunca bloquea el Core. Registrado como ADR-013.
-- **Roadmap reconciliado**: la numeración del proyecto (PHASE 0-5 completas) se mantiene y las fases futuras de la visión se mapean a PHASE 6-12 (Desktop Agent, Model Router + Resource Manager, Acceso remoto/auth, Web tools, Voice, Plugins, Automatización avanzada).
-- **Nueva documentación**: `docs/security.md` (modelo de seguridad y permisos) y `docs/models.md` (modelos y política de selección).
-- **Actualizados**: `README.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/setup.md`, `docs/development.md`, `docs/decisions.md` (ADR-013).
+- **Licencia MIT**: añadido `LICENSE` (decisión aprobada; se indicaba como pendiente en el análisis estratégico) y declarada `license = "MIT"` en `pyproject.toml`.
+- **Herramientas de host** (`nova/tools/host/`), **denegadas por defecto** y bajo el mismo Permission System + audit:
+  - `open_app`: lanza una aplicación **configurada por nombre** (`host.apps` en `config.yaml`); el LLM nunca aporta una ruta arbitraria. Si el nombre no está configurado -> fallo.
+  - `open_url`: abre una URL **solo `http`/`https`** en el navegador; rechaza esquemas peligrosos o inválidos (`file:`, `javascript:`, `data:`, `ftp:`, sin host...).
+  - `run`: ejecuta **solo comandos de una allowlist** (`host.commands`; vacía = nada corre, incluso con `autonomy: full`). Sin shell (sin inyección), timeout configurable (`host.timeout_s` o `timeout_s` por llamada), captura controlada de stdout/stderr (cap 100 KB), y **bloqueo duro** de comandos de elevación/shell/destructivos (`runas`, `sudo`, `cmd`, `powershell`, `format`, `shutdown`, ...).
+- **Config** (`nova/core/config.py`): `HostSettings (apps/commands/timeout_s)` con env `NOVA_HOST_*` y sección `host:` en `config/config.yaml` con ejemplos comentados.
+- **CLI** (`nova/cli/chat.py`): las host tools se registran en el mismo `ToolRunner`; `/run open_app {...}`, `/run open_url {...}`, `/run run {...}` reutilizan la ejecución existente (sin lógica duplicada); banner/ayuda actualizados a PHASE 6.
+- **`nova-agent`** (`nova/desktop/agent.py` + script `nova-agent`): proceso local (base del Desktop Agent) con el mismo wiring (provider, memoria, host tools, permisos, audit). **Sin comunicación remota todavía** (PHASE 8).
+- **Tests**: 24 nuevos en `tests/test_host.py` (deny por defecto, ask sin confirmación, open_app configurado/desconfigurado/ruta arbitraria, open_url válido y 6 URLs peligrosas/inválidas, run no permitido incluso con autonomy full, comandos bloqueados, captura de salida, timeouts, comando inexistente, argumentos inválidos, audit allow/deny, defaults y env de HostSettings). Total: **123** (99 previos + 24).
+- **Docs**: actualizados `README.md`, `docs/architecture.md`, `docs/roadmap.md` (PHASE 6 en progreso), `docs/security.md` (sección host tools) y creado `docs/tools.md`.
 
-### Pendientes detectados (no implementados, a la espera de aprobación)
+### Notas
 
-- `LICENSE` inexistente (decisión de licencia pendiente de aprobación).
-- 2 warnings de deprecación en tests (starlette/httpx y anyio) — limpieza menor.
-- `requirements.txt`/`requirements-dev.txt` duplican `pyproject.toml` — posible drift futuro.
+- El flujo de decisión se documenta explícitamente: **LLM propone -> Permission Manager decide -> ToolRunner ejecuta -> Audit registra**. Las herramientas de host añaden una segunda barrera independiente del Permission System: la allowlist de comandos / lista de aplicaciones configurables.
+- La API (`nova-api`) **no** expone las host tools en este paso (sin funcionalidad remota): solo están activas en CLI y `nova-agent`.
+- Pendientes detectados en el análisis: 2 warnings de deprecación en tests (starlette/httpx, anyio) y posible drift de `requirements*.txt` vs `pyproject.toml`.
+
+## [Unreleased]
+
+Pendientes del análisis estratégico aún no implementados:
+
+- Limpieza de los 2 warnings de deprecación en tests (starlette/httpx y anyio).
+- Alinear/reducir `requirements.txt`/`requirements-dev.txt` con `pyproject.toml`.
 
 ## [0.5.0] - 2026-09-07
 
