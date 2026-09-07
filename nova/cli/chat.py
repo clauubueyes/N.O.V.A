@@ -21,7 +21,7 @@ from nova.tools.runner import ToolRunner
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
-| Phase 6 - Desktop Agent (host: open_app/open_url/run) | Ollama |
+| Phase 6 - Desktop Agent (host: open_app/open_url/run + files) | Ollama |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -35,6 +35,9 @@ Commands:
   /run open_app     launch a configured application (e.g. /run open_app {"app":"notepad"})
   /run open_url     open a URL in the browser (e.g. /run open_url {"url":"https://example.com"})
   /run run          execute an allowlisted command (e.g. /run run {"command":"echo","args":["hi"]})
+  /run read_file    read a file inside host.roots (e.g. /run read_file {"path":"..."})
+  /run write_file   write a file inside host.roots (parent dir must exist)
+  /run list_files   list a directory inside host.roots (e.g. /run list_files {"path":"..."})
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
   /agents           list available agents

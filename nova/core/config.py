@@ -68,16 +68,24 @@ class HostSettings(BaseSettings):
     `run` only executes base commands listed in `commands` (allowlist; empty = nothing runs)
     and never elevation commands. `apps` maps an application name to a configured
     executable/path; the LLM only ever provides the name, never an arbitrary path.
+    `roots` bounds every path that host tools may touch (working directories and
+    file tools); empty = no filesystem access at all.
     """
 
     apps: dict[str, str] = Field(default_factory=dict)
     commands: list[str] = Field(default_factory=list)
+    roots: list[str] = Field(default_factory=list)
+    working_dir: str | None = None
     timeout_s: float = 30.0
 
-    @field_validator("apps", "commands", mode="before")
+    @field_validator("apps", "commands", "roots", mode="before")
     @classmethod
-    def _empty_to_default(cls, value: Any) -> Any:
-        return {} if value is None else value
+    def _empty_or_csv(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
 
 class NovaSettings(BaseSettings):
@@ -131,6 +139,8 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "host": {
         "apps": "apps",
         "commands": "commands",
+        "roots": "roots",
+        "working_dir": "working_dir",
         "timeout_s": "timeout_s",
     },
 }

@@ -61,6 +61,22 @@ del `PermissionSystem` (allow/deny/ask), cada una tiene su propia barrera de seg
   `nova.tools.host.terminal.BLOCKED_COMMANDS`.
 - **Sin elevación de privilegios**: la herramienta nunca lanza procesos como administrador.
 
+### `host.roots` — límites de archivos y `cwd` (paso 2, obligatorio)
+
+- **Roots de sistema de archivos**: solo se tocan rutas que **resuelven dentro** de un root de
+  `host.roots` (paths absolutos, con o sin variables de entorno como `%USERPROFILE%`). Con `roots`
+  vacía **no hay acceso al FS en absoluto**:
+  - `read_file` / `list_files` (solo lectura) y `write_file` (solo dentro de un root, el directorio
+    padre debe existir; no crea rutas fuera) fallan si no hay roots.
+  - `run` puede fijar `cwd` (por llamada) o un `working_dir` por defecto, **ambos deben estar dentro
+    de un root**; sin roots, `cwd` se rechaza.
+- **Sin escapes de root**: cada ruta se expande y resuelve con `.resolve()` (normaliza `..` y resuelve
+  symlinks/junctions) antes de comprobar si está dentro de un root — un intento de salir vía `../`,
+  un symlink o un hardlink que apunte fuera no escapa del límite.
+- `read_file` tiene tope de tamaño (100 KB) y `write_file` tope de contenido (1 MB).
+- Elección de seguridad: **denegar por defecto** cualquier acceso al FS (roots vacíos) en lugar de
+  permitir el sistema de archivos entero. La raíz se concede carpeta a carpeta.
+
 ### Denegada por defecto a nivel de permisos
 
 Aunque la herramienta esté registrada, hace falta además que el `PermissionSystem` la permita:
@@ -80,6 +96,7 @@ LLM propone (ej. open_app {app: "chrome"})
   -> PermissionSystem decide (¿en allow/deny/ask?)
   -> ToolRunner ejecuta la herramienta
       -> open_app verifica host.apps / run verifica host.commands
+      -> rutas de archivos y cwd verifican host.roots (path bounds)
   -> subprocess/webbrowser (alcance acotado) -> resultado
   -> Audit registra solicitud y resultado
 ```

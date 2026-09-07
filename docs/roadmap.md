@@ -15,7 +15,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 5 Memory | PHASE 3 Memory | ✅ |
 | PHASE 6 Web interface | PHASE 4 Interface (API + web) | ✅ |
 | PHASE 10 Agents | PHASE 5 Agents | ✅ |
-| PHASE 7 Desktop Agent | **PHASE 6 — Desktop Agent** | ⏳ paso 1 hecho |
+| PHASE 7 Desktop Agent | **PHASE 6 — Desktop Agent** | ⏳ paso 2 hecho |
 | PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | pendiente |
 | PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | pendiente |
 | — (web tools) | **PHASE 9 — Web Tools** | pendiente |
@@ -83,18 +83,18 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 > una única clase `Agent`: el LLM **propone** llamadas con JSON estructurado y N.O.V.A.
 > **decide** vía el `ToolRunner` (Permission System + audit) — ver [decisions.md](decisions.md) ADR-012.
 
-## PHASE 6 — Desktop Agent (control del ordenador, seguro) ⏳ paso 1 hecho
+## PHASE 6 — Desktop Agent (control del ordenador, seguro) ⏳ paso 2 hecho
 
 - [x] Herramientas de host bajo el Permission System: `open_app` (aplicaciones configuradas por nombre) y `open_url` (solo `http(s)`).
 - [x] Terminal seguro `run`: allowlist de comandos (`host.commands`; vacía = denegado por defecto, incluso con `autonomy: full`), sin shell, timeout configurable, salida capturada y bloqueo duro de elevación/destructivos.
 - [x] `nova-agent`: entry point que expone el host al Core (local; la exposición vía API/web se aborda en PHASE 8) con el mismo flujo propone->decide->ejecuta->audita.
 - [x] Tests de seguridad (deny por defecto, allow explícito, comandos bloqueados/inválidos, timeouts, audit de cada ejecución).
-- [ ] Rutas y capacidades ampliadas: limitar archivos/carpetas accesibles y directorios de trabajo por comando. (siguiente)
+- [x] **Rutas y capacidades limitadas**: `host.roots` acota `run` (`cwd`, `working_dir`) y las nuevas tools de archivos `read_file`/`write_file`/`list_files`; con `roots` vacío no hay acceso al FS. Los escapes `../` y symlinks se resuelven antes de comprobar.
 - [ ] Vínculo del Desktop Agent con sesiones/agentes de la API de forma segura. (PHASE 8)
 
 > Decisiones clave de seguridad en `docs/security.md` y catálogo de herramientas en `docs/tools.md`.
-> Las host tools se añaden a `config.yaml` -> `host` (lista de apps + allowlist de comandos) y **son off por defecto**:
-> además del Permission System (`permissions.allow`), `run` requiere que el comando esté en `host.commands`.
+> Las host tools se añaden a `config.yaml` -> `host` (lista de apps + allowlist de comandos + roots) y **son off por defecto**:
+> además del Permission System (`permissions.allow`), `run` requiere el comando en `host.commands` y todo acceso a archivos requiere `host.roots`.
 
 ## PHASE 7 — Model Router + Resource Manager
 

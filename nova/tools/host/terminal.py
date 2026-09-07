@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from nova.tools.base import BaseTool, ToolError, ToolResult
+from nova.tools.host.paths import PathBounds
 
 # Commands that are NEVER allowed, regardless of the allowlist configuration:
 # privilege elevation, escape hatches to a shell (which bypass the allowlist) and
@@ -55,9 +56,17 @@ class RunTool(BaseTool):
 
     input_schema = RunArgs
 
-    def __init__(self, allowlist: list[str], default_timeout_s: float = 30.0) -> None:
+    def __init__(
+        self,
+        allowlist: list[str],
+        default_timeout_s: float = 30.0,
+        bounds: PathBounds | None = None,
+        default_cwd: str | None = None,
+    ) -> None:
         self._allow = {_norm(cmd) for cmd in allowlist}
         self._default_timeout = default_timeout_s
+        self._bounds = bounds or PathBounds([])
+        self._default_cwd = default_cwd
 
     def execute(self, params: BaseModel) -> ToolResult:
         command = _norm(params.command)
@@ -76,6 +85,8 @@ class RunTool(BaseTool):
         if resolved is None:
             raise ToolError(f"command not found: {params.command}")
 
+        cwd = self._resolve_cwd(params.cwd)
+
         timeout = params.timeout_s or self._default_timeout
         try:
             completed = subprocess.run(
@@ -83,7 +94,7 @@ class RunTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=params.cwd,
+                cwd=cwd,
                 check=False,
             )
         except FileNotFoundError as exc:
@@ -99,6 +110,7 @@ class RunTool(BaseTool):
             "command": params.command,
             "args": list(params.args),
             "returncode": completed.returncode,
+            "cwd": cwd,
             "stdout": completed.stdout[:_MAX_CAPTURE],
             "stderr": completed.stderr[:_MAX_CAPTURE],
         }
@@ -112,10 +124,24 @@ class RunTool(BaseTool):
             data=data,
         )
 
+    def _resolve_cwd(self, requested_cwd: str | None) -> str | None:
+        cwd = requested_cwd or self._default_cwd
+        if cwd is None:
+            return None
+        resolved = self._bounds.resolve_within(cwd, "working directory")
+        if not resolved.is_dir():
+            raise ToolError(f"working directory does not exist: {resolved}")
+        return str(resolved)
+
 
 def _norm(command: str) -> str:
     return command.strip().lower().rstrip(".exe")
 
 
-def all_terminal_tools(allowlist: list[str], default_timeout_s: float = 30.0) -> list[BaseTool]:
-    return [RunTool(allowlist, default_timeout_s)]
+def all_terminal_tools(
+    allowlist: list[str],
+    default_timeout_s: float = 30.0,
+    bounds: PathBounds | None = None,
+    default_cwd: str | None = None,
+) -> list[BaseTool]:
+    return [RunTool(allowlist, default_timeout_s, bounds, default_cwd)]

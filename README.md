@@ -4,7 +4,10 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-> Estado actual: **PHASE 6 — Desktop Agent** (paso 1: configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, y **host tools** `open_app`/`open_url`/`run` seguras + entry point `nova-agent` local). Siguiente: Paso 2 de PHASE 6 (rutas/capacidades ampliadas, ver [docs/roadmap.md](docs/roadmap.md)).
+Get-Process | Where-Object {
+    $_.ProcessName -like '*Riot*' -or
+    $_.ProcessName -like '*VALORANT*'
+} | Select-Object Id,ProcessName,Path> Estado actual: **PHASE 6 — Desktop Agent** (paso 2: configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, y **host tools** seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent` local). Siguiente: vínculo seguro con la API (PHASE 8, ver [docs/roadmap.md](docs/roadmap.md)).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -62,11 +65,14 @@ Herramientas de control del ordenador, **denegadas por defecto** y bajo el mismo
 /run open_app {"app":"notepad"}       # lanza una app configurada en host.apps
 /run open_url {"url":"https://example.com"}   # solo http(s), rechaza esquemas peligrosos
 /run run {"command":"echo","args":["hola"]}   # solo comandos de host.commands, sin shell, con timeout
+/run read_file {"path":"..."}        # lee un archivo dentro de host.roots (solo lectura)
+/run list_files {"path":"..."}       # lista un directorio dentro de host.roots
 ```
 
 - `open_app`: el LLM solo aporta el **nombre**; la ruta de la app vive en `config/config.yaml` -> `host.apps` (nunca una ruta arbitraria).
 - `run`: la **allowlist** `host.commands` es obligatoria — vacía = nada se ejecuta, incluso con `autonomy: full`. Elevación y comandos destructivos siempre bloqueados.
-- Cómo habilitar una app o comando: ver [docs/security.md](docs/security.md) y `config/config.yaml`.
+- Archivos: `read_file`/`write_file`/`list_files` y el `cwd` de `run` **solo tocan rutas dentro de `host.roots`** (vacío = sin acceso al FS; los escapes `../`/symlinks se bloquean).
+- Cómo habilitar una app, comando o carpeta: ver [docs/security.md](docs/security.md) y `config/config.yaml`.
 
 ## Agentes (PHASE 5)
 
@@ -88,7 +94,7 @@ nova/
   core/              Config, logging, contexto de conversación (ChatSession), audit log
   llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro (+ Model Router en PHASE 7)
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
-    host/            Host tools seguras: open_app/open_url/run (PHASE 6)
+    host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)

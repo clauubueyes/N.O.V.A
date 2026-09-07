@@ -71,4 +71,11 @@ host:
     # - echo
     # - git
     # - where
+  # PHASE 6 paso 2 — FileSystem bounds. root activo o vacíos: con roots vacía
+  #   NO hay acceso a archivos (read_file/write_file/list_files fallan) y `run`
+  #   no puede fijar cwd. Cada ruta que toque una host tool DEBE resolver dentro
+  #   de uno de estos roots (paths absolutos, con o sin variables de entorno).
+  roots: []
+    # - "%USERPROFILE%\\Documents"
+  working_dir: null
   timeout_s: 30.0

@@ -21,7 +21,18 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigu
 
 - El flujo de decisión se documenta explícitamente: **LLM propone -> Permission Manager decide -> ToolRunner ejecuta -> Audit registra**. Las herramientas de host añaden una segunda barrera independiente del Permission System: la allowlist de comandos / lista de aplicaciones configurables.
 - La API (`nova-api`) **no** expone las host tools en este paso (sin funcionalidad remota): solo están activas en CLI y `nova-agent`.
-- Pendientes detectados en el análisis: 2 warnings de deprecación en tests (starlette/httpx, anyio) y posible drift de `requirements*.txt` vs `pyproject.toml`.
+- Pendientes detectados en el análisis: 2 warnings de deprecación en tests (starlette/httpx, anyio) y la API no tiene auth (se aborda en PHASE 8).
+
+### Añadido — PHASE 6 paso 2: límites de rutas / FileSystem bounds
+
+- **`PathBounds`** (`nova/tools/host/paths.py`): acota **toda** ruta que toque una host tool. Cada path se expande y `resolve()` (normaliza `..` y symlinks/junctions) y debe quedar dentro de uno de los `host.roots`; comparación sin distinguir mayúsculas en Windows. `roots` vacío = **sin acceso al FS**.
+- **Tools de archivos acotadas** (`nova/tools/host/files.py`):
+  - `read_file` (solo lectura, tope 100 KB), `list_files` (solo lectura), `write_file` (tope 1 MB; el directorio padre debe existir; no crea rutas). Todas denegadas por defecto y bajo el Permission System.
+- **`run` acotado**: el `cwd` (por llamada) y el `working_dir` por defecto deben estar dentro de `host.roots`; sin roots se rechaza. Se reporta el `cwd` real en el resultado.
+- **Config**: `HostSettings.roots` (lista) y `working_dir` (string|None), env `NOVA_HOST_ROOTS`/`NOVA_HOST_WORKING_DIR`; sección `roots:`/`working_dir:` en `config/config.yaml` con `roots` vacío por defecto (off).
+- **CLI**: las 3 tools de archivos se registran; `/run read_file|write_file|list_files {...}` disponibles.
+- **Tests**: 20 nuevos en `tests/test_host_paths.py` (tools de archivos denegadas por defecto / sin roots, leer/escribir/listar dentro y fuera de root, escape `../` bloqueado, archivo inexistente/too large, escribir sin directorio padre, `cwd` dentro/fuera/sin roots, `working_dir` por defecto, `cwd` inexistente, defaults y env de roots). Total: **143** (123 + 20).
+- **Docs**: actualizados `docs/security.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/tools.md`, `README.md` y `CHANGELOG.md`.
 
 ## [Unreleased]
 

@@ -51,6 +51,8 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.tools.base` | `BaseTool` (schema Pydantic + `execute` + `json_schema()`), `ToolResult`, `ToolError`. |
 | `nova.tools.standard` | Herramientas de ejemplo: `calculate`, `date_time`, `list_dir`. |
 | `nova.tools.host` | Host tools seguro (PHASE 6): `open_app`, `open_url`, `run` — allowlist de comandos y apps configurables, denegadas por defecto. |
+| `nova.tools.host.files` | Tools de archivos acotadas por `host.roots`: `read_file`, `write_file`, `list_files`. |
+| `nova.tools.host.paths` | `PathBounds`: reduce y comprueba que cada ruta toca solo dentro de `host.roots` (evita escapes `../`, symlinks). |
 | `nova.tools.registry` | Registro de herramientas por nombre. |
 | `nova.tools.permissions` | `PermissionSystem`: autonomía (`off`/`ask`/`full`) + reglas allow/deny. |
 | `nova.tools.runner` | `ToolRunner`: permiso -> validación -> ejecución, auditando cada paso. |
@@ -176,6 +178,11 @@ segunda barrera de seguridad **independiente del Permission System**:
      `runas`, `sudo`, `gsudo`, shells (`cmd`, `powershell`, `bash`, `wsl`...), `format`, `diskpart`,
      `shutdown`, `reg`, etc.
    - Sin elevación de privilegios (no se usan `runas`/UAC desde la herramienta).
+   - El `cwd` (por llamada o `working_dir`) debe estar dentro de `host.roots`; sin roots se rechaza.
+4. Tools de archivos (`read_file`, `write_file`, `list_files`) — **acotadas por `host.roots`**: toda
+   ruta se resuelve con `.resolve()` (normaliza `..`, symlinks/junctions) y debe quedar dentro de un
+   root. `roots` vacío = **sin acceso al FS**. `write_file` no crea directorios. Con estos límites,
+   el LLM nunca toca el sistema de archivos entero, solo las carpetas concedidas.
 
 ```
 CLI / nova-agent
@@ -186,6 +193,8 @@ Host tool:
   open_app -> ¿name en host.apps? -> Popen([ejecutable])
   open_url -> ¿scheme http/https y host? -> webbrowser.open(url)
   run      -> ¿comando en host.commands y no bloqueado? -> subprocess(lista, timeout) -> stdout/stderr
+              (cwd dentro de host.roots)
+  read/write/list -> ¿ruta dentro de host.roots? -> IO acotado (caps)
   v
 AuditLog (JSON lines) + Resultado -> Usuario
 ```
