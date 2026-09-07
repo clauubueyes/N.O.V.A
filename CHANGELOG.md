@@ -2,6 +2,34 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [Unreleased]
+
+Pendientes del análisis estratégico aún no implementados:
+
+- Limpieza de los 2 warnings de deprecación en tests (starlette/httpx y anyio).
+- Alinear/reducir `requirements.txt`/`requirements-dev.txt` con `pyproject.toml`.
+
+## [0.7.0] - 2026-09-07
+
+### Añadido — PHASE 7: Model Router + Resource Manager
+
+- **`ResourceManager`** (`nova/llm/resources.py`): snapshot best-effort de recursos del sistema con la stdlib, sin dependencias pesadas:
+  - RAM total/disponible (Linux vía `/proc/meminfo`; resto de plataformas degrada conservador), CPU (cores + carga neutral por defecto), GPU/VRAM opcional (lector inyectable, por defecto no disponible) y batería (porcentaje + AC, por defecto AC).
+  - Cada reader es un **callable inyectable**; nunca lanza: si falla, degrada a valores conservadores (cpu 50 %, AC sí, sin GPU). Dataclass `SystemResources` con `ram_available_pct()`.
+- **Catálogo de modelos** en `config/config.yaml` -> `llm.models`: roles `small`/`local`/`coding`/`vision`/`embedding` (nombres nunca hardcodeados, ADR-004); roles vacíos caen a `default_model`.
+- **`ModelRouter`** (`nova/llm/router.py`): clasifica la tarea (`simple`, `coding`, `vision`, `heavy`, `general`) por pistas en el texto y elige modelo por **complejidad + recursos + privacidad**; si el rol no está configurado degrada a `default_model`. Con RAM disponible < `model_router.min_ram_gb` o batería < 20 % sin AC (si `battery: true`) hace *downshift* de tareas pesadas/coding a `small`. `build_router` para el wiring.
+- **Config**: `ModelRouterSettings` (`min_ram_gb`/`battery`/`cloud_enabled`, env `NOVA_MODEL_ROUTER_*`) y campo `llm.models`; sección `model_router:` y `llm.models:` en `config/config.yaml`.
+- **CLI** (`nova/cli/chat.py`): routing automático por turno (chat general y `/agent <name>`), comandos `/route <text>` (decisión) y `/catalog` (roles y modelos); banner/ayuda actualizados a PHASE 7.
+- **API** (`nova/api/app.py`): `POST /v1/route` (`{task_kind, role, model, reason}`); `POST /v1/sessions/{id}/chat` rutea por turno cuando no se pasa `model` explícito (el explícito se respeta).
+- **`nova-agent`** (`nova/desktop/agent.py`): misma ruta de routing por turno, `/route` y `/catalog`; corregido bug preexistente `/clear` (`clear()` en lugar de `clear_history()`).
+- **Tests**: 29 nuevos (clasificación del router, routing con recursos normales/bajos, downshift auto-desactivado, degradación de readers, GPU, catálogo, config con `llm.models`/`model_router`, 4 de API para `/v1/route` + routing en sesión, smoke real contra Ollama que se omite si no está disponible). Total: **172** (143 previos + 29), 2 skips.
+- **Docs**: actualizados `README.md`, `docs/architecture.md`, `docs/roadmap.md` (PHASE 7 ✅), `docs/models.md` (router implementado + tabla de escenarios), `docs/api.md` (`/v1/route`), `docs/security.md`, `docs/decisions.md` (ADR-014) y `CHANGELOG.md`.
+
+### Notas
+
+- La selección de modelo es una **decisión del Core**, nunca del LLM (ADR-014): el modelo propone, N.O.V.A. decide conforme a recursos y privacidad (ADR-013). Sin dependencias nuevas.
+- Pendientes detectados en el análisis (no resueltos en esta fase): 2 warnings de deprecación en tests (starlette/httpx, anyio) y la API no tiene auth (PHASE 8).
+
 ## [0.6.0] - 2026-09-07
 
 ### Añadido — PHASE 6: Desktop Agent (paso 1 — host tools)
@@ -33,13 +61,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigu
 - **CLI**: las 3 tools de archivos se registran; `/run read_file|write_file|list_files {...}` disponibles.
 - **Tests**: 20 nuevos en `tests/test_host_paths.py` (tools de archivos denegadas por defecto / sin roots, leer/escribir/listar dentro y fuera de root, escape `../` bloqueado, archivo inexistente/too large, escribir sin directorio padre, `cwd` dentro/fuera/sin roots, `working_dir` por defecto, `cwd` inexistente, defaults y env de roots). Total: **143** (123 + 20).
 - **Docs**: actualizados `docs/security.md`, `docs/architecture.md`, `docs/roadmap.md`, `docs/tools.md`, `README.md` y `CHANGELOG.md`.
-
-## [Unreleased]
-
-Pendientes del análisis estratégico aún no implementados:
-
-- Limpieza de los 2 warnings de deprecación en tests (starlette/httpx y anyio).
-- Alinear/reducir `requirements.txt`/`requirements-dev.txt` con `pyproject.toml`.
 
 ## [0.5.0] - 2026-09-07
 

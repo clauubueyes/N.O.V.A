@@ -16,6 +16,7 @@ from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.registry import create_provider
+from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.tools import ToolResult, registry as tool_registry
 from nova.tools.host import all_host_tools
@@ -26,7 +27,7 @@ from nova.tools.runner import ToolRunner
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Desktop Agent (local process)                      |
-| Phase 6 - Host tools (open_app/open_url/run) | Ollama         |
+| Phase 7 - Model Router + Resource Manager | Ollama            |
 +--------------------------------------------------------------+
 | Type /help for commands.  Type /exit to shut down.            |
 +--------------------------------------------------------------+"""
@@ -37,6 +38,8 @@ Commands:
   /clear            clear conversation context (keeps system prompt)
   /models           list available Ollama models
   /model <name>     switch model for current session
+  /route <text>     show which model the ModelRouter would pick (PHASE 7)
+  /catalog          list the configured model catalog (PHASE 7)
   /tools            list registered tools
   /run <name> <json> run a tool (e.g. /run open_app {"app":"notepad"})
   /remember <text>  store a fact in persistent memory
@@ -64,6 +67,7 @@ def main() -> int:
         system_prompt=settings.session.system_prompt,
     )
     current_model = settings.llm.default_model
+    router = build_router(settings.llm, settings.model_router)
 
     memory = MemoryService(
         MemoryStore(settings.memory.db_file),
@@ -103,12 +107,31 @@ def main() -> int:
             print(HELP)
             continue
         if user_input == "/clear":
-            session.clear_history()
+            session.clear()
             print("Context cleared.")
             continue
         if user_input == "/tools":
             for tool in registry.all():
                 print(f"  {tool.name:12s} {tool.description[:60]}")
+            continue
+        if user_input == "/catalog":
+            for role, model in router.catalog().items():
+                resolved = model or f"(default: {current_model})"
+                print(f"  - {role:<10} {resolved}")
+            continue
+        if user_input.startswith("/route"):
+            text = user_input[6:].strip()
+            if not text:
+                print("Usage: /route <text>")
+                continue
+            decision = router.route_for(text)
+            print(
+                f"[route] {decision.task_kind} -> {decision.model} "
+                f"(role={decision.role}). {decision.reason}"
+            )
+            continue
+        if user_input == "/model":
+            print(f"Current model: {current_model}")
             continue
         if user_input.startswith("/run "):
             args_str = user_input[5:].strip()
@@ -144,7 +167,7 @@ def main() -> int:
         result = runner.run_llm(
             provider=provider,
             session=session,
-            model=current_model,
+            model=router.route_for(user_input).model,
             user_message=user_input,
         )
         if result.answer:

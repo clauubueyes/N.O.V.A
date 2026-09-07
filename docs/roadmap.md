@@ -16,7 +16,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 6 Web interface | PHASE 4 Interface (API + web) | ✅ |
 | PHASE 10 Agents | PHASE 5 Agents | ✅ |
 | PHASE 7 Desktop Agent | **PHASE 6 — Desktop Agent** | ⏳ paso 2 hecho |
-| PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | pendiente |
+| PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | ✅ |
 | PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | pendiente |
 | — (web tools) | **PHASE 9 — Web Tools** | pendiente |
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | pendiente |
@@ -96,13 +96,17 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 > Las host tools se añaden a `config.yaml` -> `host` (lista de apps + allowlist de comandos + roots) y **son off por defecto**:
 > además del Permission System (`permissions.allow`), `run` requiere el comando en `host.commands` y todo acceso a archivos requiere `host.roots`.
 
-## PHASE 7 — Model Router + Resource Manager
+## PHASE 7 — Model Router + Resource Manager ✅
 
-- [ ] `ResourceManager`: abstracción sencilla de recursos (RAM disponible, CPU, GPU/VRAM si se puede leer, batería/carga) sin dependencias pesadas.
-- [ ] Catálogo de modelos en config (`llm.models`): pequeño/local/coding/vision/embedding.
-- [ ] `ModelRouter`: clasifica la tarea (simple, compleja, código, visión, privada) y elige modelo según recurso + complejidad + privacidad.
-- [ ] Cloud solo como perfil opcional configurado explícitamente (ADR-013); degradación elegante si no hay modelo local adecuado.
-- [ ] Tests con fakes; smoke test real contra Ollama.
+- [x] `ResourceManager` (`nova/llm/resources.py`): abstracción sencilla de recursos sin dependencias pesadas (RAM total/disponible, CPU, GPU/VRAM opcional, batería). Lecturas best-effort: cada reader es un callable inyectable y nunca lanza; si no se puede leer, degrada a valores conservadores.
+- [x] Catálogo de modelos en config (`llm.models`): roles `small`/`local`/`coding`/`vision`/`embedding`, nombres nunca hardcodeados; roles vacíos caen a `default_model`.
+- [x] `ModelRouter` (`nova/llm/router.py`): clasifica la tarea (`simple`, `coding`, `vision`, `heavy`, `general`) y elige modelo por complejidad + recursos + privacidad. Con RAM/batería bajos hace *downshift* de tareas pesadas/coding a `small`.
+- [x] Cloud solo como perfil opcional (`model_router.cloud_enabled` = False, ADR-013); degradación elegante si no hay modelo local adecuado (todo cae a `default_model`).
+- [x] Integración: CLI `/route` + `/catalog` y routing automático por turno; agents ruteados por texto; API `POST /v1/route` y routing por turno cuando no se pasa modelo; `nova-agent` usa routing.
+- [x] Tests con fakes del ResourceManager + router (clasificación, downshift por RAM/batería, degradación) y smoke test real contra Ollama (se omite si no está disponible).
+
+> La selección de modelo es una decisión del Core, nunca del LLM: el modelo **propone**, N.O.V.A. **decide** conforme a recursos y privacidad (ADR-013 y nuevo ADR-014).
+> Fase completada con 172 tests (167 + 5 del router/resources; 2 skips, uno del smoke test real sin Ollama).
 
 ## PHASE 8 — Acceso remoto + auth + frontend
 

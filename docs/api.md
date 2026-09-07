@@ -270,6 +270,7 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 | `GET /healthz` | Salud: `provider`, `status`, `version`. |
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
 | `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`). |
+| `POST /v1/route` | PHASE 7 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "role", "model", "reason"}`. |
 | `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
 | `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |
 | `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria: `{"message", "model"}` -> `{"reply", "context", "steps", ...}`. |
@@ -284,6 +285,7 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 Notas:
 
 - El endpoint de sesión reutiliza `ChatSession` + `MemoryService`: cada turno se persiste y se inyecta el contexto relevante antes de llamar al LLM.
+- PHASE 7: si `POST /v1/sessions/{id}/chat` no recibe `model`, el `ModelRouter` elige el modelo por turno según el texto (tarea + recursos + privacidad). `POST /v1/route` expone esa decisión.
 - Si la sesión se creó con `agent`, `/chat` usa `Agent.act` y devuelve `steps` (una entrada por tool-call: nombre, args, ok, mensaje, datos) además de la respuesta.
 - Los agentes estatelés persisten por nombre en el `AppState` (`nova.api.app`): mantienen sesión, memoria propia y historial entre llamadas.
 - La API nunca pregunta interactivamente: un permiso `ASK` se resuelve denegado (`result.ok == false`). Las reglas `allow` siguen ejecutando directo (p. ej. `calculate`).

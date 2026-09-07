@@ -10,6 +10,7 @@ from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.base import ChatCompletionRequest, ChatMessage, NOVAProviderError
 from nova.llm.registry import create_provider
+from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.memory.retriever import MemoryHit
 from nova.tools import ToolResult, registry as tool_registry
@@ -22,6 +23,7 @@ BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
 | Phase 6 - Desktop Agent (host: open_app/open_url/run + files) | Ollama |
+| Phase 7 - Model Router + Resource Manager                    |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -30,6 +32,8 @@ Commands:
   /clear            clear conversation context (keeps system prompt)
   /models           list available Ollama models
   /model <name>     switch model for current session
+  /route <text>     show which model the ModelRouter would pick (PHASE 7)
+  /catalog          list the configured model catalog (PHASE 7)
   /tools            list registered tools
   /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
   /run open_app     launch a configured application (e.g. /run open_app {"app":"notepad"})
@@ -80,6 +84,7 @@ def main() -> int:
         system_prompt=settings.session.system_prompt,
     )
     current_model = settings.llm.default_model
+    router = build_router(settings.llm, settings.model_router)
 
     memory = MemoryService(
         MemoryStore(settings.memory.db_file),
@@ -105,7 +110,7 @@ def main() -> int:
 
     agents: dict[str, Agent] = {}
 
-    def get_agent(name: str) -> Agent | None:
+    def get_agent(name: str, model: str | None = None) -> Agent | None:
         preset_names = {preset.name for preset in agent_presets()}
         if name not in preset_names:
             return None
@@ -116,7 +121,7 @@ def main() -> int:
                 provider=provider,
                 runner=tools_runner,
                 memory=memory,
-                model=current_model,
+                model=model or current_model,
             )
             agents[name] = agent
         return agent
@@ -160,6 +165,20 @@ def main() -> int:
                         print(f"[model -> {current_model}]")
                     else:
                         print(f"Current model: {current_model}")
+                elif command == "catalog":
+                    for role, model in router.catalog().items():
+                        resolved = model or "(default)"
+                        print(f"  - {role:<10} {resolved}")
+                elif command == "route":
+                    text = " ".join(parts[1:]).strip()
+                    if not text:
+                        print("Usage: /route <text>")
+                        continue
+                    decision = router.route_for(text)
+                    print(
+                        f"[route] {decision.task_kind} -> {decision.model} "
+                        f"(role={decision.role}). {decision.reason}"
+                    )
                 elif command == "tools":
                     for tool in tools_registry.all():
                         print(f"  - {tool.name:<14} {tool.description}")
@@ -196,7 +215,7 @@ def main() -> int:
                     if not text:
                         print("Usage: /agent <name> <text>")
                         continue
-                    agent = get_agent(name)
+                    agent = get_agent(name, router.route_for(text).model)
                     if agent is None:
                         print(f"Skipping: unknown agent '{name}'. See /agents.")
                         continue
@@ -236,7 +255,8 @@ def main() -> int:
             memory.record("user", line)
             logger.info("user: %s", line)
             try:
-                request = session.build_request(model=current_model)
+                decision = router.route_for(line)
+                request = session.build_request(model=decision.model)
                 context = memory.context(line)
                 if context:
                     request = ChatCompletionRequest(

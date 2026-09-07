@@ -44,6 +44,8 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.llm.base` | Interfaz `LLMProvider` (chat, listado, health, embeddings) + tipos `ChatMessage`, `ChatCompletionRequest/Response`, `NOVAProviderError`. |
 | `nova.llm.ollama` | `OllamaProvider`: API compatible OpenAI (`/v1/chat/completions`), `/api/tags` y embeddings (`/api/embed`). |
 | `nova.llm.registry` | Registro de proveedores por nombre; `create_provider` es la única fábrica usada por todo el código. |
+| `nova.llm.resources` | `ResourceManager` (PHASE 7): snapshot best-effort de RAM/CPU/GPU/batería con readers inyectables. |
+| `nova.llm.router` | `ModelRouter` (PHASE 7): clasifica la tarea y elige modelo por complejidad + recursos + privacidad; `build_router` para el wiring. |
 | `nova.memory.store` | `MemoryStore`: SQLite local (hechos + trascripción de conversación, embeddings opcionales). |
 | `nova.memory.retriever` | Recuperación por similitud coseno sobre embeddings, con fallback a keywords. |
 | `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI, la API y los Agents. |
@@ -231,8 +233,9 @@ La visión de producto mapea sobre esta estructura sin saltos de arquitectura:
 ```
 
 Estado de cada pieza hoy: **Memory** ✅ (PHASE 3, SQLite + embeddings), **Agents** ✅ (PHASE 5),
-**Tools + Permission System + audit** ✅ (PHASE 2), **Model Router** ⏳ (PHASE 7), **Cloud** ❌ no está
-presente ni se asume — el Core funciona 100% local y gratuito.
+**Tools + Permission System + audit** ✅ (PHASE 2), **Model Router + Resource Manager** ✅ (PHASE 7),
+**Cloud** ❌ no está presente ni se asume — el Core funciona 100% local y gratuito. La selección de
+modelo es decisión del Core (`ModelRouter`), nunca del LLM (ADR-014).
 
 El **Desktop Agent** (PHASE 6) conecta la misma ruta `Usuario -> Core -> Permission System -> Tool`
 desde el ordenador del usuario (host), reutilizando el `ToolRunner` existente; en PHASE 8 el móvil
@@ -240,7 +243,7 @@ accederá a través de la API con el Desktop Agent como brazo de ejecución del 
 
 ## Caminos futuros (incremental)
 
-- **PHASE 6-12** — Desktop Agent (control del host seguro), Model Router + Resource Manager, acceso remoto con auth, web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
+- **PHASE 8-12** — Acceso remoto con auth, web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
 
 ## Restricciones de diseño
 

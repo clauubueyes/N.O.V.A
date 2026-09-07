@@ -25,6 +25,23 @@ class LLMSettings(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     temperature: float = 0.7
     timeout_s: float = 60.0
+    # PHASE 7 — model catalog used by the ModelRouter. Each key is a role the
+    # router fills with a concrete model name when the task matches it.
+    models: dict[str, str] = Field(default_factory=dict)
+
+
+class ModelRouterSettings(BaseSettings):
+    """PHASE 7 — routing policy.
+
+    `min_ram_gb` is the threshold below which heavy models are avoided when a
+    lightweight alternative exists; `battery` controls whether to downshift when
+    on battery. `cloud_enabled` (ADR-013) is always False unless explicitly
+    configured by the user; N.O.V.A. never depends on a cloud model.
+    """
+
+    min_ram_gb: float = 8.0
+    battery: bool = True
+    cloud_enabled: bool = False
 
 
 class LoggingSettings(BaseSettings):
@@ -94,6 +111,7 @@ class NovaSettings(BaseSettings):
     }
 
     llm: LLMSettings = LLMSettings()
+    model_router: ModelRouterSettings = ModelRouterSettings()
     logging: LoggingSettings = LoggingSettings()
     session: SessionSettings = SessionSettings()
     permissions: PermissionSettings = PermissionSettings()
@@ -111,6 +129,11 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "embedding_model": "embedding_model",
         "temperature": "temperature",
         "timeout_s": "timeout_s",
+    },
+    "model_router": {
+        "min_ram_gb": "min_ram_gb",
+        "battery": "battery",
+        "cloud_enabled": "cloud_enabled",
     },
     "logging": {
         "level": "level",

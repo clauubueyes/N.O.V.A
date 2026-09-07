@@ -108,6 +108,54 @@ class TestModels:
             assert response.status_code == 502
 
 
+class TestRouting:
+    def _routed_client(self, tmp_path, provider=None) -> TestClient:
+        settings = load_settings()
+        settings.memory.db_file = str(tmp_path / "memory.db")
+        settings.audit.file = str(tmp_path / "audit.jsonl")
+        settings.llm.models = {
+            "small": "small-model",
+            "coding": "coder-model",
+            "local": "local-model",
+        }
+        return TestClient(create_app(settings, provider=provider or FakeProvider()))
+
+    def test_route_simple(self, tmp_path) -> None:
+        with self._routed_client(tmp_path) as client:
+            data = client.post("/v1/route", json={"messages": [{"role": "user", "content": "hola!"}]}).json()
+            assert data["task_kind"] == "simple"
+            assert data["model"] == "small-model"
+
+    def test_route_coding(self, tmp_path) -> None:
+        with self._routed_client(tmp_path) as client:
+            data = client.post(
+                "/v1/route", json={"messages": [{"role": "user", "content": "escribe una funcion en python"}]}
+            ).json()
+            assert data["task_kind"] == "coding"
+            assert data["model"] == "coder-model"
+
+    def test_session_chat_routes_model_when_not_specified(self, tmp_path) -> None:
+        provider = FakeProvider()
+        with self._routed_client(tmp_path, provider=provider) as client:
+            session_id = _session_id(client)
+            response = client.post(
+                f"/v1/sessions/{session_id}/chat", json={"message": "hola como estas?"}
+            )
+            assert response.status_code == 200
+            # no explicit model -> router picks the small greeting model
+            assert provider.chat_calls[-1].model == "small-model"
+
+    def test_session_chat_keeps_explicit_model(self, tmp_path) -> None:
+        provider = FakeProvider()
+        with self._routed_client(tmp_path, provider=provider) as client:
+            session_id = _session_id(client)
+            client.post(
+                f"/v1/sessions/{session_id}/chat",
+                json={"message": "hola", "model": "explicit-model"},
+            )
+            assert provider.chat_calls[-1].model == "explicit-model"
+
+
 class TestChat:
     def test_stateless_chat(self, tmp_path) -> None:
         with _client(tmp_path) as client:

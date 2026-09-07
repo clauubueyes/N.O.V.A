@@ -38,6 +38,7 @@ from nova.llm.base import (
     NOVAProviderError,
 )
 from nova.llm.registry import create_provider
+from nova.llm.router import ModelRouter, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.tools import registry as base_tools_registry
 from nova.tools.permissions import PermissionSystem
@@ -95,6 +96,7 @@ def create_app(
         audit=AuditLog(settings.audit.file),
         permissions=PermissionSystem(settings.permissions),
     )
+    state.router: ModelRouter = build_router(settings.llm, settings.model_router)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -187,6 +189,17 @@ def create_app(
     def list_tools() -> list[ToolInfoOut]:
         return _tool_infos()
 
+    @app.post("/v1/route")
+    def route(req: ChatRequest) -> dict[str, str]:
+        text = req.messages[-1].content if req.messages else ""
+        decision = state.router.route_for(text)
+        return {
+            "task_kind": decision.task_kind,
+            "role": decision.role,
+            "model": decision.model,
+            "reason": decision.reason,
+        }
+
     def get_agent_entry(name: str) -> SessionEntry:
         entry = state.agents.get(name)
         if entry is not None:
@@ -272,7 +285,10 @@ def create_app(
             )
         entry.session.add_user(req.message)
         entry.memory.record("user", req.message)
-        model = req.model or entry.model
+        if req.model:
+            model = req.model
+        else:
+            model = state.router.route_for(req.message).model
         try:
             request = entry.session.build_request(model=model)
             context = entry.memory.context(req.message)

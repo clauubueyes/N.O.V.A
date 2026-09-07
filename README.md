@@ -4,10 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Get-Process | Where-Object {
-    $_.ProcessName -like '*Riot*' -or
-    $_.ProcessName -like '*VALORANT*'
-} | Select-Object Id,ProcessName,Path> Estado actual: **PHASE 6 — Desktop Agent** (paso 2: configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, y **host tools** seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent` local). Siguiente: vínculo seguro con la API (PHASE 8, ver [docs/roadmap.md](docs/roadmap.md)).
+Estado actual: **PHASE 7 — Model Router + Resource Manager** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent` local, y **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`). Siguiente: vínculo seguro con la API (PHASE 8, ver [docs/roadmap.md](docs/roadmap.md)).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -40,7 +37,7 @@ Interfaz web y API REST:
 .\.venv\Scripts\nova-agent   # proceso local del Desktop Agent (PHASE 6, sin remoto)
 ```
 
-Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords).
+Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords). Para el routing de PHASE 7, descarga los que quieras en el catálogo: `ollama pull llama3.2:1b` (small) y `ollama pull qwen2.5-coder:7b` (coding).
 
 Prueba una herramienta dentro del chat:
 
@@ -56,6 +53,17 @@ Guarda un hecho y recupéralo:
 ```
 
 N.O.V.A. guarda cada conversación y, cuando preguntes algo, inyecta automáticamente la memoria relevante como contexto.
+
+## Model Router (PHASE 7)
+
+El modelo se elige **por turno** según la tarea, los recursos disponibles y la privacidad (ADRs 013/014). El catálogo vive en `config/config.yaml` -> `llm.models` (`small`/`local`/`coding`/`vision`/`embedding`) y nunca en código; si un rol no está configurado se usa `default_model`.
+
+```text
+/route escribe una función en python   # muestra task_kind, role y modelo elegido
+/catalog                                # lista roles -> modelos
+```
+
+Con RAM por debajo de `model_router.min_ram_gb` (o batería baja sin AC), tareas pesadas/coding caen a `small`. En la API, `POST /v1/route` expone la misma decisión y las sesiones rutean por turno salvo que se pase `model` explícito.
 
 ## Host (PHASE 6, paso 1)
 
@@ -89,10 +97,10 @@ En la web usa el selector de agente; por API, `GET /v1/agents` y `POST /v1/agent
 ## Proyecto
 
 ```
-config/config.yaml    Configuración externa (modelos, permissions, audit, memory, api, host; nunca en código)
+config/config.yaml    Configuración externa (modelos, permissions, audit, memory, api, host, router; nunca en código)
 nova/
   core/              Config, logging, contexto de conversación (ChatSession), audit log
-  llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro (+ Model Router en PHASE 7)
+  llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro + ResourceManager + ModelRouter (PHASE 7)
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
     host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
@@ -104,7 +112,7 @@ docs/                Documentación del proyecto
 tests/               Tests pytest
 ```
 
-Arquitectura objetivo (evolución, no un salto de golpe):
+Arquitectura actual:
 
 ```
          N.O.V.A. Core

@@ -105,10 +105,22 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
 
 - **Fecha:** 2026-09-07
 - **Contexto:** la visión de producto exige que N.O.V.A. sea usable sin APIs de pago; el coste de inferencia debe recaer en el dispositivo del usuario cuando sea posible, y en infraestructura gratuita/open source cuando la modalidad remota lo requiera.
-- **Decisión:** N.O.V.A. es **local-first**: 
+- **Decisión:** N.O.V.A. es **local-first**:
   1. El proveedor principal es `ollama` (modelos locales/OSS); la interfaz `LLMProvider` ya lo permite.
   2. El Core **nunca depende** de servicios de pago. Cualquier API cloud es **integración opcional** que solo se activa si el usuario la configura explícitamente y que degrada con elegancia (el modelo diario sigue siendo local).
   3. Eficiencia como requisito: el **Model Router** (PHASE 7) seleccionará modelo por tarea y por capacidad del dispositivo (RAM/VRAM/CPU/GPU) para no derrochar recursos.
   4. Privacidad por defecto: datos locales; nada abandona el dispositivo sin consentimiento; sin telemetría; secretos fuera de Git.
 - **Consecuencias:** cualquier funcionalidad futura (voz, web tools, desktop agent, acceso remoto) se diseña priorizando OSS/gratuito; si algo requiere infraestructura que cuesta dinero, primero se busca alternativa gratuita y, si no existe, se documenta como limitación y se convierte en opcional. Los ADR futuros de cada fase deben alinearse con esta restricción.
+- **Estado:** aceptada.
+
+## ADR-014 — Model Router: la selección de modelo es decisión del Core, no del LLM
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 7 materializa la eficiencia prevista en ADR-013. Un único modelo por defecto no aprovecha los recursos disponibles ni respeta la privacidad según el tipo de tarea; dejar que el LLM elija su propio modelo rompería la separación "el LLM propone, N.O.V.A. decide".
+- **Decisión:**
+  1. **`ResourceManager`** (`nova/llm/resources.py`): snapshot best-effort de RAM (total/disponible), CPU, GPU/VRAM opcional y batería. Cada reader es un callable inyectable; nunca lanza y degrada a valores conservadores (ADR-005, sin dependencias pesadas tipo psutil).
+  2. **Catálogo de modelos** en `config/config.yaml` -> `llm.models` con roles `small`/`local`/`coding`/`vision`/`embedding`. Roles vacíos caen a `default_model` (ADR-004: nombres en config, nunca en código).
+  3. **`ModelRouter`** (`nova/llm/router.py`): clasifica la tarea (`simple`, `coding`, `vision`, `heavy`, `general`) por regex de pistas y elige modelo por complejidad + recursos + privacidad. Con RAM disponible < `model_router.min_ram_gb` o batería < 20 % sin AC (si `battery: true`) hace *downshift* de tareas pesadas/coding a `small`.
+  4. Cloud es un rol opcional: `model_router.cloud_enabled` es `False` por defecto (ADR-013); nunca se depende de él.
+- **Consecuencias:** el routing se aplica por turno en CLI, `nova-agent` y API (`/v1/route` + sesiones); sigue funcionando el `model` explícito (lo respeta). El sistema degrada con elegancia si el rol no está configurado. Añadir un criterio (latencia, modelo privado) = lógica nueva en `route_for` sin tocar `LLMProvider`.
 - **Estado:** aceptada.

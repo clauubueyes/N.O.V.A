@@ -19,12 +19,14 @@
 
 | Uso | Modelo | Tamaño aprox. | Notas |
 |---|---|---|---|
-| Chat general | `llama3.1:8b` | ~4.7 GB | Buen equilibio calidad/recursos |
+| Chat general / local | `llama3.1:8b` | ~4.7 GB | Buen equilibio calidad/recursos |
+| Respuestas rápidas / small | `llama3.2:1b` | ~1.3 GB | Modelo ligero para tareas simples y downshift |
 | Coding (agente `coding`) | `qwen2.5-coder:7b` | ~4.7 GB | Modelo especializado en código |
 | Embeddings (memoria) | `nomic-embed-text` | ~274 MB | Vector para recuperación |
 
 ```powershell
 ollama pull llama3.1:8b
+ollama pull llama3.2:1b
 ollama pull qwen2.5-coder:7b
 ollama pull nomic-embed-text
 ```
@@ -38,21 +40,43 @@ sin romper la sesión.
 2. El agente `coding` recomienda `qwen2.5-coder:7b` (consejo de config, no imposición).
 3. La memoria usa `embedding_model`.
 
-## Model Router (PHASE 7, objetivo)
+## Model Router (PHASE 7, implementado)
 
-`ModelRouter` elegirá el modelo por **tarea, recurso disponible y privacidad**:
+`ModelRouter` (`nova/llm/router.py`) elige el modelo por **tarea, recurso disponible y privacidad**;
+el LLM nunca elige su propio modelo — esa es una decisión del Core.
 
 | Factor | Consideración |
 |---|---|
-| Complejidad de la tarea | simple -> modelo pequeño; compleja -> modelo mayor |
-| Tipo de tarea | código -> modelo de código; visión -> multimodal local si existe |
-| Recursos del dispositivo | RAM/VRAM/CPU/GPU disponibles (`ResourceManager`) |
+| Complejidad de la tarea | simple -> modelo `small`; compleja/heavy -> modelo `local` |
+| Tipo de tarea | código -> `coding`; visión -> `vision` (si existe local) |
+| Recursos del dispositivo | RAM/GPU/batería vía `ResourceManager`; si faltan -> *downshift* a `small` |
 | Latencia deseada | tamaño del modelo y carga |
-| Privacidad | por defecto local; cloud solo si el usuario lo perfila explícitamente |
+| Privacidad | por defecto local; cloud solo si `model_router.cloud_enabled: true` (ADR-013) |
 
-Catálogo configurable en `config/config.yaml` (p. ej. `llm.catalog: { small, default, coding,
-vision, embedding }`), con degradación elegante: si no hay un modelo adecuado, se usa `default_model`.
-Diseño detallado se decidirá en PHASE 7 (nuevo ADR, sin romper la interfaz `LLMProvider`).
+Catálogo configurable en `config/config.yaml` -> `llm.models` (roles `small`, `local`, `coding`,
+`vision`, `embedding`). Degradación elegante: si el rol no está configurado, se usa `default_model`.
+
+Clasificación de tareas: `simple`, `coding`, `vision`, `heavy` y `general` (regex de pistas en
+`router.py`). Con RAM disponible < `model_router.min_ram_gb` (o batería < 20 % sin AC, si
+`model_router.battery: true`), las tareas `heavy`/`coding` caen a `small` si existe.
+
+### Uso
+
+- CLI: `/route <texto>` muestra la decisión y `/catalog` lista el catálogo; el chat y los agentes
+  se rutean automáticamente por turno.
+- API: `POST /v1/route` devuelve `{task_kind, role, model, reason}`; `POST /v1/sessions/{id}/chat`
+  rutea el modelo por turno salvo que se pase `model` explícito.
+- `nova-agent` rutea cada mensaje igual que el chat.
+
+### Escenarios
+
+| Texto (pista) | task_kind | role | modelo (ejemplo) |
+|---|---|---|---|
+| "hola!" | simple | small | `llama3.2:1b` |
+| "escribe una funcion en python" | coding | coding | `qwen2.5-coder:7b` (downshift a small si RAM baja) |
+| "mira esta imagen" | vision | vision | `llama3.2-vision` (si está configurado) |
+| "haz un analisis complejo" | heavy | local | `llama3.1:8b` |
+| "cuéntame una historia" | general | local | `llama3.1:8b` |
 
 ## Reglas transversales
 

@@ -12,6 +12,25 @@ llm:
   embedding_model: nomic-embed-text
   temperature: 0.7
   timeout_s: 60.0
+  # PHASE 7 — Model catalog used by the ModelRouter. Each role maps to a model
+  # name. Roles left empty fall back to `default_model`. Pull the ones you want:
+  #   ollama pull llama3.2:1b      (small)
+  #   ollama pull qwen2.5-coder:7b (coding)
+  #   ollama pull llama3.2-vision  (vision)
+  models:
+    small: llama3.2:1b
+    local: llama3.1:8b
+    coding: qwen2.5-coder:7b
+    vision: ""
+    embedding: nomic-embed-text
+
+model_router:
+  # PHASE 7 — routing policy: when the active RAM / battery is below these
+  # thresholds the router downshifts heavy/coding tasks to the `small` model.
+  min_ram_gb: 8.0
+  battery: true
+  # ADR-013: clouds are never used unless explicitly enabled by the user.
+  cloud_enabled: false
 
 logging:
   level: INFO

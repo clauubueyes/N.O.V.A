@@ -29,6 +29,10 @@ def test_defaults_when_no_config_file(tmp_path, monkeypatch) -> None:
     assert settings.memory.similarity_threshold == 0.3
     assert settings.api.host == "127.0.0.1"
     assert settings.api.port == 8000
+    assert settings.model_router.min_ram_gb == 8.0
+    assert settings.model_router.battery is True
+    assert settings.model_router.cloud_enabled is False
+    assert settings.llm.models == {}
 
 
 def test_config_file_overrides_defaults(tmp_path, monkeypatch) -> None:
@@ -42,6 +46,19 @@ def test_config_file_overrides_defaults(tmp_path, monkeypatch) -> None:
     assert settings.llm.default_model == "qwen2.5-coder:7b"
     assert settings.llm.temperature == 0.2
     assert settings.llm.provider == "ollama"
+
+
+def test_models_catalog_and_router_from_config(tmp_path, monkeypatch) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "llm:\n  models:\n    small: llama3.2:1b\n    coding: qwen2.5-coder:7b\n"
+        "model_router:\n  min_ram_gb: 6.0\n  battery: false\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(path=str(config))
+    assert settings.llm.models == {"small": "llama3.2:1b", "coding": "qwen2.5-coder:7b"}
+    assert settings.model_router.min_ram_gb == 6.0
+    assert settings.model_router.battery is False
 
 
 def test_env_variable_overrides_config(tmp_path, monkeypatch) -> None:
