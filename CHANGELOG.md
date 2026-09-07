@@ -9,6 +9,23 @@ Pendientes del análisis estratégico aún no implementados:
 - Limpieza de los 2 warnings de deprecación en tests (starlette/httpx y anyio).
 - Alinear/reducir `requirements.txt`/`requirements-dev.txt` con `pyproject.toml`.
 
+## [0.8.0] - 2026-09-07
+
+### Añadido — PHASE 8: Acceso remoto + auth + frontend
+
+- **Auth Bearer en la API** (`nova/api/app.py`): con `api.token` configurado (o `NOVA_API_TOKEN`), toda ruta `/v1/*` exige `Authorization: Bearer <token>` (401 si falta/es inválida). `healthz` y `/` quedan abiertos.
+- **CORS configurable**: `api.cors_origins` (defecto `"*"`) + `CORSMiddleware` para servir un frontend desde otro origen/hosting.
+- **Vínculo remoto segurizado (Desktop Agent -> API)**: con `api.host_enabled: true` se exponen las host tools (`open_app`, `open_url`, `run`, archivos) en `GET /v1/tools` y en las sesiones de la API, bajo el mismo Permission System y audit (un `ask` en API se deniega). **Guarda dura**: `host_enabled` sin token impide arrancar `create_app` (`ValueError`); regla documentada como ADR-015.
+- **Frontend servible como estático** (`nova/api/static/index.html`): base de API configurable (`?api=<base>` o `localStorage`), campo de token en el encabezado (Bearer autogenerado), y CSS responsive para móviles (`@media max-width: 600px`).
+- **Config**: `APISettings` ampliado (`token`, `host_enabled`, `cors_origins`) con env `NOVA_API_TOKEN`/`NOVA_API_HOST_ENABLED`/`NOVA_API_CORS_ORIGINS`; sección `api:` ampliada en `config/config.yaml` con ejemplos y advertencias.
+- **Tests**: `tests/test_api_auth.py` con 10 tests (401 sin/con token erróneo, 200 con token, token protege sesiones/chat y `/v1/models`, guarda `host_enabled` sin token, host tools listadas/ejecutadas solo activas, `ask` denegado en API). Total: **180** (170 previos + 10), 2 skips.
+- **Docs**: actualizados `README.md`, `docs/architecture.md` (vínculo API-host), `docs/roadmap.md` (PHASE 8 en progreso), `docs/api.md` (auth + tabla), `docs/setup.md` (modo local/LAN/hosting estático), `docs/security.md` (sección exposición de red PHASE 8) y `docs/decisions.md` (ADR-015).
+
+### Notas
+
+- Regla transversal (ADR-015): nunca exponer host tools en la API sin Bearer token, y nunca publicar la API a Internet sin TLS (proxy reverso). El LLM nunca corre en serverless: solo se sirve el cliente estático.
+- Pendientes detectados en el análisis (no resueltos en esta fase): 2 warnings de deprecación en tests (starlette/httpx, anyio) y alinear `requirements*.txt` con `pyproject.toml`.
+
 ## [0.7.0] - 2026-09-07
 
 ### Añadido — PHASE 7: Model Router + Resource Manager

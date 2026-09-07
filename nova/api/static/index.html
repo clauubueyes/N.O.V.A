@@ -49,11 +49,25 @@
     cursor: pointer; font-size: 13px;
   }
   #compose button:disabled { background: #2a3242; color: #6b7488; cursor: wait; }
+  #token-input {
+    width: 120px; background: #10131a; color: #d7dce5; border: 1px solid #343d50;
+    border-radius: 6px; padding: 5px 8px; font-size: 12px;
+  }
   dialog { width: 420px; border: 1px solid #343d50; border-radius: 10px; background: #171c26; color: #d7dce5; }
   dialog h2 { font-size: 14px; margin: 0 0 10px; color: #7fd1ff; }
   dialog ul { margin: 0; padding: 0 0 0 18px; font-size: 12px; }
   dialog li { margin: 4px 0; }
   dialog .close { margin-top: 12px; background: #232a38; color: #d7dce5; border: 1px solid #343d50; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+  @media (max-width: 600px) {
+    header { flex-wrap: wrap; gap: 8px; }
+    header h1 { font-size: 14px; }
+    .msg { max-width: 92%; font-size: 14px; }
+    #token-input { width: 100%; }
+    nav { flex-wrap: wrap; width: 100%; }
+    nav select, nav button { flex: 1; }
+    #compose { padding: 8px; }
+    dialog { width: 92%; }
+  }
 </style>
 </head>
 <body>
@@ -62,6 +76,7 @@
   <h1>N.O.V.A.</h1>
   <span class="model" id="model">conectando...</span>
   <nav>
+    <input id="token-input" type="password" placeholder="token API" autocomplete="off" title="Bearer token (PHASE 8)">
     <select id="agent" title="Elige un agente (las tools las decide el modelo)">
       <option value="">sin agente</option>
     </select>
@@ -93,8 +108,40 @@
   const send = document.getElementById("send");
   const model = document.getElementById("model");
   const agentSelect = document.getElementById("agent");
+
+  // PHASE 8 — API base + token. The UI can be served by the API itself (relative
+  // paths) or as a static build with ?api=<base> / a saved token.
+  const params = new URLSearchParams(location.search);
+  let apiBase = (params.get("api") || localStorage.getItem("nova.apiBase") || "").replace(/\/+$/, "");
+  let token = params.get("token") || localStorage.getItem("nova.token") || "";
+
+  function persist() {
+    if (apiBase) localStorage.setItem("nova.apiBase", apiBase); else localStorage.removeItem("nova.apiBase");
+    if (token) localStorage.setItem("nova.token", token); else localStorage.removeItem("nova.token");
+  }
+
   let sessionId = null;
   let agentName = "";
+  const tokenInput = document.getElementById("token-input");
+
+  function attachTokenInput() {
+    tokenInput.value = token;
+    tokenInput.placeholder = token ? "token guardado" : "token API";
+  }
+
+  tokenInput.addEventListener("change", () => {
+    token = tokenInput.value.trim();
+    persist();
+    attachTokenInput();
+    if (token) {
+      log.replaceChildren();
+      createSession();
+    }
+  });
+
+  function apiUrl(path) {
+    return apiBase + path;
+  }
 
   function append(kind, text) {
     const node = document.createElement("div");
@@ -119,7 +166,14 @@
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(body);
     }
-    const response = await fetch(path, options);
+    if (token) options.headers["Authorization"] = "Bearer " + token;
+    const response = await fetch(apiUrl(path), options);
+    if (response.status === 401) {
+      tokenInput.value = "";
+      token = "";
+      attachTokenInput();
+      throw new Error("Sin autorización: introduce el token de la API y vuelve a intentarlo.");
+    }
     if (!response.ok) {
       const detail = await response.text();
       throw new Error(detail || response.statusText);
@@ -166,6 +220,7 @@
   }
 
   async function boot() {
+    attachTokenInput();
     try {
       const agents = await json("GET", "/v1/agents");
       for (const agent of agents) {

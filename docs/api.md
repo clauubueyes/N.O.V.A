@@ -1,6 +1,6 @@
 # API
 
-Estado: **PHASE 5**. N.O.V.A. expone API **interna** de Python, un CLI, una **API REST** (FastAPI) con interfaz web y **Agents**.
+Estado: **PHASE 8**. N.O.V.A. expone API **interna** de Python, un CLI, una **API REST** (FastAPI) con interfaz web, **Agents** y acceso remoto seguro con token.
 
 ## Proveedor LLM — `nova.llm.base`
 
@@ -253,7 +253,7 @@ result = tools.run("calculate", {"expression": "2+2"})
 print(result.data)   # {"expression": "2+2", "result": 4}
 ```
 
-## Endpoint HTTP — `nova.api` (PHASE 4 + 5)
+## Endpoint HTTP — `nova.api` (PHASE 4 + 5 + 8)
 
 Arranque:
 
@@ -265,11 +265,20 @@ python -m nova.api.server
 
 Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` permite inyectar dependencias en tests.
 
+### Autenticación (PHASE 8)
+
+- Con `api.token` configurado (o `NOVA_API_TOKEN`), toda ruta `/v1/*` exige
+  `Authorization: Bearer <token>`; si falta o es inválida responde **401**. `GET /healthz` y `/` (web)
+  quedan abiertos.
+- `api.host_enabled: true` sin token impide arrancar `create_app` (`ValueError`), y solo con él se
+  exponen las host tools (`run`, archivos, `open_app`, `open_url`) en `GET /v1/tools` y en las
+  sesiones. CORS según `api.cors_origins` (defecto `"*"`). Detalles en `docs/security.md` y ADR-015.
+
 | Método y ruta | Descripción |
 |---|---|
 | `GET /healthz` | Salud: `provider`, `status`, `version`. |
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
-| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`). |
+| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`). |
 | `POST /v1/route` | PHASE 7 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "role", "model", "reason"}`. |
 | `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
 | `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |

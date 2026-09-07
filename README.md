@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 7 — Model Router + Resource Manager** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent` local, y **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`). Siguiente: vínculo seguro con la API (PHASE 8, ver [docs/roadmap.md](docs/roadmap.md)).
+Estado actual: **PHASE 8 — Acceso remoto + auth + frontend** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`, y **acceso remoto seguro con token Bearer + CORS + host tools vinculadas a la API**). Pendiente de la fase: refinamiento de la guía de despliegue remoto (ver [docs/roadmap.md](docs/roadmap.md)).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -34,7 +34,7 @@ Interfaz web y API REST:
 
 ```powershell
 .\.venv\Scripts\nova-api     # sirve http://127.0.0.1:8000/ (UI) y /docs (OpenAPI)
-.\.venv\Scripts\nova-agent   # proceso local del Desktop Agent (PHASE 6, sin remoto)
+.\.venv\Scripts\nova-agent   # proceso local del Desktop Agent (PHASE 6; remoto opcional en PHASE 8)
 ```
 
 Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords). Para el routing de PHASE 7, descarga los que quieras en el catálogo: `ollama pull llama3.2:1b` (small) y `ollama pull qwen2.5-coder:7b` (coding).
@@ -67,7 +67,7 @@ Con RAM por debajo de `model_router.min_ram_gb` (o batería baja sin AC), tareas
 
 ## Host (PHASE 6, paso 1)
 
-Herramientas de control del ordenador, **denegadas por defecto** y bajo el mismo Permission System + audit (solo CLI y `nova-agent`, no en la API):
+Herramientas de control del ordenador, **denegadas por defecto** y bajo el mismo Permission System + audit (CLI y `nova-agent`; en la API solo con `api.host_enabled: true` y token — PHASE 8):
 
 ```text
 /run open_app {"app":"notepad"}       # lanza una app configurada en host.apps
@@ -81,6 +81,23 @@ Herramientas de control del ordenador, **denegadas por defecto** y bajo el mismo
 - `run`: la **allowlist** `host.commands` es obligatoria — vacía = nada se ejecuta, incluso con `autonomy: full`. Elevación y comandos destructivos siempre bloqueados.
 - Archivos: `read_file`/`write_file`/`list_files` y el `cwd` de `run` **solo tocan rutas dentro de `host.roots`** (vacío = sin acceso al FS; los escapes `../`/symlinks se bloquean).
 - Cómo habilitar una app, comando o carpeta: ver [docs/security.md](docs/security.md) y `config/config.yaml`.
+
+## Acceso remoto (PHASE 8)
+
+Local de serie (`api.host: 127.0.0.1`), sin token. Para acceder desde el móvil/LAN o publicar un frontend estático:
+
+```yaml
+api:
+  host: 0.0.0.0              # LAN/móvil
+  token: "cambia-este-secreto"   # cada ruta /v1/* exigirá Authorization: Bearer <token>
+  host_enabled: true         # opcional: expone host tools (run/archivos) a la API — solo con token
+  cors_origins: "*"          # hosting estático (p. ej. Vercel) apuntando con ?api=<base>
+```
+
+- **Guarda dura (ADR-015)**: `host_enabled: true` sin token impide arrancar la API (`ValueError`).
+- **Nunca a Internet sin TLS**: usa un proxy reverso con certificado (Caddy/nginx/Cloudflare); sin TLS el token viaja en claro.
+- El **LLM nunca corre en serverless**: el frontend es un cliente estático; el backend (LLM + memoria + tools) vive solo en tu dispositivo.
+- Guía completa en [docs/setup.md](docs/setup.md) y límites en [docs/security.md](docs/security.md).
 
 ## Agentes (PHASE 5)
 
@@ -106,7 +123,7 @@ nova/
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)
-  api/               API REST (FastAPI) + interfaz web (PHASE 4)
+  api/               API REST (FastAPI) + interfaz web (PHASE 4; auth + remoto en PHASE 8)
   cli/               Interfaz de conversación
 docs/                Documentación del proyecto
 tests/               Tests pytest

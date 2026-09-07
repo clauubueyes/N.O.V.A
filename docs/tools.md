@@ -61,8 +61,8 @@ host:
    permitidas a `host.roots` (ativas o sin roots no se permite nada). Opcionalmente
    `working_dir` como `cwd` por defecto. Todo lo que `write_file` cree/cambie queda dentro de estos roots.
 4. **Permiso de la herramienta**: con `autonomy: ask` el CLI preguntará `[y/N]` la primera vez; si
-   quieres que corra directa, añádela a `permissions.allow` (o a `permissions.deny` para bloquearla
-   siempre). En la API no es relevante: las host tools no se registran ahí.
+   quieres que corra directa, añádela a `permissions.allow` (o a `permissions.deny` para bloquearla)
+   siempre. En la API solo se registran con `api.host_enabled: true` (PHASE 8) y siguen bajo permisos.
 
 Los comandos de elevación/destructivos son imposibles de permitir: `nova.tools.host.terminal.BLOCKED_COMMANDS`
 los bloquea siempre (ver [security.md](security.md)).

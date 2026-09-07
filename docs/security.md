@@ -85,8 +85,9 @@ directo (p. ej. `open_app`, `open_url`) o en `permissions.deny` para bloquearlas
 
 ### Alcance
 
-- Las host tools se registran **solo** en el CLI y en `nova-agent` (proceso local). La API
-  (`nova-api`) **no** las expone en este paso: sin funcionalidad remota hasta PHASE 8.
+- Las host tools se registran solo en el CLI y en `nova-agent` (proceso local). La API
+  (`nova-api`) solo las expone con `api.host_enabled: true` (PHASE 8), y en ese caso **exige token**
+  y permanecen bajo el mismo Permission System + audit.
 - Toda invocación (permitida o denegada) queda en el audit log con decisión, argumentos y resultado.
 
 ### Modelo de decisión de una host tool
@@ -121,9 +122,24 @@ Reglas:
 
 ## Exposición de red / acceso remoto (PHASE 8)
 
-- Hoy la API escucha en `127.0.0.1` (local). Abrir a la LAN (`api.host: 0.0.0.0`) es decisión del usuario.
-- Antes de exponer a Internet se requiere: **autenticación (token)**, consideración de TLS (proxy
-  reverso) y que el host solo ejecute tools bajo permisos. Sin auth, la API no debe publicarse.
+- Por defecto la API escucha en `127.0.0.1` (local, sin token necesario). Nada cambia en el flujo
+  habitual: las rutas `/v1/*` corren auth solo cuando `api.token` está configurado.
+- **Token (Bearer)**: con `api.token: <secreto>` en `config/config.yaml` (o `NOVA_API_TOKEN`), toda
+  ruta `/v1/*` exige `Authorization: Bearer <secreto>`; sin él responde **401**. `healthz` y `/` quedan
+  abiertos (la web sirve el client y deja el token al usuario).
+- **Host tools remotas (`api.host_enabled`)** — activar solo si realmente quieres controlar el host
+  desde el móvil/navegador. **Guarda dura (ADR-015)**: `create_app` **no arranca** si
+  `host_enabled: true` sin token (`ValueError`). Nunca habilites esto sin token.
+- **TLS obligatorio para Internet**: si el host/puerto se exponen a WAN, pon un proxy reverso con TLS
+  delante (p. ej. Caddy `reverse_proxy` con certificado automático, nginx+certbot, o túnel Cloudflare).
+  El token viaja en un header — **sin TLS va en claro y lo puede esnifar cualquiera en la red**.
+  Regla: sin TLS la API no se publica a Internet.
+- **CORS**: `api.cors_origins` controla qué orígenes pueden llamar al API desde otro sitio (defecto
+  `"*"`). Para servir la web desde hosting estático (p. ej. Vercel) apunta el frontend con
+  `?api=<base>` y deja `"*"` o la lista exacta; el **LLM nunca corre en serverless**, solo el cliente.
+- **Sin confirmación humana en la API**: un `ask` se deniega (`result.ok == false`); solo corre lo de
+  `permissions.allow`. Con `host_enabled` usa `autonomy: full` únicamente con `host.commands` y
+  `host.roots` explícitos y auditando.
 - El móvil (PHASE 8) accede vía la API con el Desktop Agent como brazo de ejecución del host, bajo
   las mismas reglas de permisos y audit.
 

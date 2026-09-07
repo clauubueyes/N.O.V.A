@@ -17,7 +17,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 10 Agents | PHASE 5 Agents | ✅ |
 | PHASE 7 Desktop Agent | **PHASE 6 — Desktop Agent** | ⏳ paso 2 hecho |
 | PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | ✅ |
-| PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | pendiente |
+| PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | ⏳ pasos 1-2 hechos |
 | — (web tools) | **PHASE 9 — Web Tools** | pendiente |
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | pendiente |
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | pendiente |
@@ -108,12 +108,19 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 > La selección de modelo es una decisión del Core, nunca del LLM: el modelo **propone**, N.O.V.A. **decide** conforme a recursos y privacidad (ADR-013 y nuevo ADR-014).
 > Fase completada con 172 tests (167 + 5 del router/resources; 2 skips, uno del smoke test real sin Ollama).
 
-## PHASE 8 — Acceso remoto + auth + frontend
+## PHASE 8 — Acceso remoto + auth + frontend (⏳ pasos 1-2 hechos)
 
-- [ ] Autenticación en la API (token) antes de exponer en LAN/Internet; documentar límites (nunca expuesta sin TLS/token).
-- [ ] Vinculación del Desktop Agent con sesiones remotas (móvil -> API -> host).
-- [ ] Frontend servible como estático (candidato a hosting gratuito tipo Vercel) con el **backend local**: el LLM nunca corre en serverless.
-- [ ] Mobile: ajustes de la web para pantallas pequeñas; modo local vs remoto documentado en `docs/setup.md`.
+- [x] **Auth en la API**: `api.token` (Bearer) exigido en cada ruta `/v1/*` cuando está configurado (401 si falta/es inválido); `healthz` y `/` quedan abiertos. **Guarda dura**: `api.host_enabled: true` sin token impide arrancar `create_app` (`ValueError`).
+- [x] **CORS configurable**: `api.cors_origins` (`"*"` por defecto) para servir un frontend desde otro origen/hosting.
+- [x] **Vínculo Desktop Agent -> API**: con `api.host_enabled: true` se exponen las host tools (`open_app`, `open_url`, `run`, archivos) en las sesiones de la API y en `GET /v1/tools` bajo las mismas reglas del Permission System y audit; un `ask` en la API se deniega (no hay confirmación humana), solo corre lo listado en `permissions.allow`.
+- [x] **Frontend servible como estático**: `?api=<base>` / `localStorage` para apuntar a otra instalación; campo de token por navegador (`Bearer` autogenerado); el LLM nunca corre en serverless — el frontend es solo cliente.
+- [x] **Mobile responsive**: `@media (max-width: 600px)` con cabecera apilable, input de token a ancho completo y cajas de mensaje al 92%.
+- [x] Tests dedicados (`tests/test_api_auth.py`): auth 401/200, token protege las rutas y las sesiones, guarda `host_enabled` sin token, host tools listadas/ejecutadas solo cuando está activo.
+- [ ] Modo local vs remoto bien documentado en `docs/setup.md` y guía de proxy TLS en `docs/security.md` (paso 3).
+
+> Regla de seguridad **(ADR-015)**: nunca exponer las host tools del Desktop Agent en la API sin Bearer token,
+> y nunca exponer la API a Internet sin TLS. Con `api.host_enabled` desactivado (defecto) la API no ve qué
+> pasa en el host; úsalo solo con `autonomy` conservadora y comandos `host.commands` explícitos.
 
 ## PHASE 9 — Web Tools
 

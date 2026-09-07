@@ -75,8 +75,29 @@ class MemorySettings(BaseSettings):
 
 
 class APISettings(BaseSettings):
+    """PHASE 8 — remote access policy for the REST API.
+
+    - `token`: Bearer token required on every `/v1/*` route. Empty = no auth
+      (only safe while the API is bound to 127.0.0.1 and never exposed).
+    - `host_enabled`: expose the Desktop Agent host tools (open_app/open_url/run,
+      files) through the API so a remote client can drive the host machine.
+      REFUSES TO START without a token (hard safety guard).
+    - `cors_origins`: origins allowed for a separately-hosted frontend
+      (e.g. Vercel free hosting). "*" mirrors the default UX of a local UI.
+    """
+
     host: str = "127.0.0.1"
     port: int = 8000
+    token: str = ""
+    host_enabled: bool = False
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_cors(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
 
 class HostSettings(BaseSettings):
@@ -158,6 +179,9 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "api": {
         "host": "host",
         "port": "port",
+        "token": "token",
+        "host_enabled": "host_enabled",
+        "cors_origins": "cors_origins",
     },
     "host": {
         "apps": "apps",

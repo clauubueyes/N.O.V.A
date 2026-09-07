@@ -201,8 +201,8 @@ Host tool:
 AuditLog (JSON lines) + Resultado -> Usuario
 ```
 
-- Las host tools se registran **solo** en CLI y `nova-agent` (proceso local). La API (`nova-api`) no las
-  expone en este paso: sin funcionalidad remota hasta PHASE 8.
+- Las host tools se registran en CLI y `nova-agent` (proceso local), y en la API solo con
+  `api.host_enabled: true` bajo token Bearer obligatorio (PHASE 8, ADR-015).
 - Config mínima en `config/config.yaml` -> `host`: `apps` (nombre -> ejecutable), `commands` (allowlist),
   `timeout_s`.
 - Referencias: [security.md](security.md) y [tools.md](tools.md).
@@ -239,7 +239,8 @@ modelo es decisión del Core (`ModelRouter`), nunca del LLM (ADR-014).
 
 El **Desktop Agent** (PHASE 6) conecta la misma ruta `Usuario -> Core -> Permission System -> Tool`
 desde el ordenador del usuario (host), reutilizando el `ToolRunner` existente; en PHASE 8 el móvil
-accederá a través de la API con el Desktop Agent como brazo de ejecución del host.
+accede a través de la API (`api.host_enabled` + token) con el Desktop Agent como brazo de ejecución
+del host.
 
 ## Caminos futuros (incremental)
 

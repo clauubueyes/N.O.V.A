@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nova import __version__
@@ -41,6 +42,7 @@ from nova.llm.registry import create_provider
 from nova.llm.router import ModelRouter, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.tools import registry as base_tools_registry
+from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
@@ -71,14 +73,33 @@ class AppState:
     agents: dict[str, SessionEntry] = field(default_factory=dict)
 
 
-def _tool_infos() -> list[ToolInfoOut]:
+def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
     infos = [
         ToolInfoOut(name=tool.name, description=tool.description)
         for tool in base_tools_registry.all()
     ]
+    memory_names = {tool.name for tool in (RememberTool, MemorySearchTool)}
+    infos = [info for info in infos if info.name not in memory_names]
     for tool_cls in (RememberTool, MemorySearchTool):
         infos.append(ToolInfoOut(name=tool_cls.name, description=tool_cls.description))
+    if settings.api.host_enabled:
+        for tool in all_host_tools(settings.host):
+            infos.append(ToolInfoOut(name=tool.name, description=tool.description))
     return infos
+
+
+def _auth_middleware(settings: NovaSettings):
+    """Reject any /v1/* request without a valid Bearer token when one is configured."""
+    token = settings.api.token
+
+    async def middleware(request: Request, call_next):
+        if token and request.url.path.startswith("/v1/"):
+            auth = request.headers.get("authorization", "")
+            if auth != f"Bearer {token}":
+                return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+        return await call_next(request)
+
+    return middleware
 
 
 def create_app(
@@ -88,6 +109,13 @@ def create_app(
 ) -> FastAPI:
     """Build the N.O.V.A. REST API reusing the Core (LLM, sessions, memory, tools)."""
     settings = settings or load_settings()
+
+    if settings.api.host_enabled and not settings.api.token:
+        raise ValueError(
+            "api.host_enabled requires api.token: never expose the Desktop Agent "
+            "host tools through the API without a Bearer token."
+        )
+
     provider = provider or create_provider(settings.llm)
 
     state = AppState(
@@ -113,6 +141,13 @@ def create_app(
         version=__version__,
         lifespan=lifespan,
     )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.api.cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.middleware("http")(_auth_middleware(settings))
     app.state.nova = state
 
     def build_session(session_id: str, agent_name: str | None = None) -> SessionEntry:
@@ -128,7 +163,8 @@ def create_app(
             similarity_threshold=settings.memory.similarity_threshold,
         )
         registry = create_registry(
-            [RememberTool(memory), MemorySearchTool(memory)],
+            [RememberTool(memory), MemorySearchTool(memory)]
+            + (all_host_tools(settings.host) if settings.api.host_enabled else []),
             base=base_tools_registry,
         )
         runner = ToolRunner(
@@ -187,7 +223,7 @@ def create_app(
 
     @app.get("/v1/tools", response_model=list[ToolInfoOut])
     def list_tools() -> list[ToolInfoOut]:
-        return _tool_infos()
+        return _tool_infos(settings)
 
     @app.post("/v1/route")
     def route(req: ChatRequest) -> dict[str, str]:

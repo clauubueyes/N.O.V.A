@@ -70,6 +70,19 @@ api:
   # PHASE 4 — REST API + web interface (nova-api).
   host: 127.0.0.1
   port: 8000
+  # PHASE 8 — remote access. Local-first: with `host: 127.0.0.1` you don't need a
+  # token. To expose on the LAN/internet you MUST set a token (and put a TLS
+  # reverse proxy in front; never expose the API plaintext).
+  #
+  #   token: ""
+  #
+  # Exposing the Desktop Agent host tools through the API (mobile -> API -> host).
+  # REFUSES TO START without a token — never enable without one:
+  #
+  #   host_enabled: true
+  #
+  # Origins allowed to call the API from a separately-hosted frontend:
+  #   cors_origins: "*"
 
 host:
   # PHASE 6 — Desktop Agent host tools. Denied by default: these tools only run

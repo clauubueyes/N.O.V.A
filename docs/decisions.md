@@ -124,3 +124,16 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   4. Cloud es un rol opcional: `model_router.cloud_enabled` es `False` por defecto (ADR-013); nunca se depende de él.
 - **Consecuencias:** el routing se aplica por turno en CLI, `nova-agent` y API (`/v1/route` + sesiones); sigue funcionando el `model` explícito (lo respeta). El sistema degrada con elegancia si el rol no está configurado. Añadir un criterio (latencia, modelo privado) = lógica nueva en `route_for` sin tocar `LLMProvider`.
 - **Estado:** aceptada.
+
+## ADR-015 — Host tools remotas solo con token; la API nunca se expone sin auth/TLS
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 8 permite acceder al Desktop Agent desde fuera (móvil -> API -> host). Las host tools (`open_app`, `open_url`, `run`, archivos) ejecutan código y tocan el sistema del usuario; exponerlas a la red sin control supondría una puerta abierta al host. El resto del stack ya es local-first (ADR-013) y "el LLM propone, N.O.V.A. decide" (ADR-007).
+- **Decisión:**
+  1. **Auth obligatoria**: `api.token` (Bearer) con `api.host_enabled: true`. `create_app` **lanza `ValueError`** si `host_enabled` está activo sin token; cada ruta `/v1/*` devuelve 401 sin el header `Authorization: Bearer <token>`. `healthz` y `/` quedan abiertos.
+  2. **CORS de origen**: `api.cors_origins` (defecto `"*"`) permite servir un frontend estático desde otro origen; el token se envía desde el navegador (localStorage), nunca en la URL.
+  3. **El LLM nunca corre en serverless**: el frontend es un cliente estático; el backend (LLM + memoria + tools) vive siempre en el dispositivo. Para el hosting gratuito solo se publica el cliente.
+  4. **Sin confirmación humana en la API**: un `ask` se deniega (`result.ok == false`); solo corre lo que esté explícito en `permissions.allow`. Recomendado `autonomy: full` solo con `host.commands`/`host.roots` explícitos y auditado.
+  5. **TLS por proxy reverso**: exponer la API a Internet requiere TLS delante (p. ej. Caddy/nginx/Cloudflare). Sin TLS, la API no se publica — ver `docs/security.md`.
+- **Consecuencias:** las host tools se listan en `GET /v1/tools` y se inyectan en las sesiones de la API solo con `host_enabled`. El frontend se sirve igual desde la propia API (`/`) — misma origin, sin CORS — o estático con `?api=<base>`. Tests en `tests/test_api_auth.py`.
+- **Estado:** aceptada.

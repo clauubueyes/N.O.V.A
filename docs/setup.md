@@ -120,12 +120,44 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/v1/agents/coding/chat 
 
 Si la herramienta no está en `permissions.allow`, el Permission System preguntará antes de ejecutarla (`[y/N]`).
 
-## Red y acceso externo (PHASE 6-8, vista previa)
+## Red y acceso externo (PHASE 8)
 
-- La API escucha en `api.host` / `api.port` (por defecto `127.0.0.1` — solo local).
-- Para probarla desde la **LAN** (móvil propio), cambia `api.host: 0.0.0.0` en `config/config.yaml`.
-- ⚠️ **No compartas la API en Internet sin autenticación**: la capa de auth/token y recomendaciones TLS llegan en PHASE 8 (`docs/security.md`). Hoy la API no pide token.
-- El **Desktop Agent** (PHASE 6) y los **web tools** (PHASE 9) seguirán el mismo principio: las herramientas viven en el dispositivo y solo se ejecutan bajo el Permission System.
+La API escucha en `api.host` / `api.port` (por defecto `127.0.0.1` — solo local, sin token).
+
+### Modo local (defecto) — ninguna configuración
+
+- Solo tu ordenador accede a `http://127.0.0.1:8000/`. No hace falta token (auth de `/v1/*` solo
+  se activa si configuras `api.token`).
+
+### Modo LAN / remoto (móvil propio)
+
+```yaml
+api:
+  host: 0.0.0.0            # escucha en toda la red local
+  token: "cambia-este-secreto"   # obligatorio si le pones host_enabled, recomendado siempre
+  host_enabled: true       # opcional: expone las host tools a la API (¡móvil -> API -> host!)
+```
+
+- Cada ruta `/v1/*` exigirá `Authorization: Bearer <token>`. La web local la usas igual: metes el
+  token en el campo del encabezado (se guarda en `localStorage` del navegador).
+- Desde el móvil abre `http://<IP-del-PC>:8000/` y guarda el mismo token.
+
+### Hosting estático (frontend en Vercel/Netlify/github.io, backend local)
+
+El frontend es un **cliente estático**: el LLM, la memoria y las tools viven en tu ordenador,
+nunca en serverless. Sirve la carpeta `nova/api/static/` en tu hosting y añade el origen a la API:
+
+1. En el hosting configura el variable que prefieras para la URL de tu PC (`https://<tunel>.dominio` o `http://IP:8000`).
+2. En `config/config.yaml`: `api.cors_origins` con tu dominio (p. ej. `https://nova-app.vercel.app`) y `api.token` con un secreto.
+3. Abre la web publicada con `?api=<url-de-tu-pc>` (o usa `localStorage.setItem("nova.apiBase", ...)`); introduce el token en el campo del encabezado.
+
+> ⚠️ **Internet sin TLS = jamás.** Si expones el puerto a la WAN, pon delante un proxy reverso con
+> TLS (Caddy/nginx/Cloudflare); el token va en un header y sin TLS se esnifa. Detalles y ejemplos en
+> `docs/security.md`.
+
+> ⚠️ **`api.host_enabled: true` sin `api.token` impide arrancar la API** (`ValueError`, ADR-015). Las
+> host tools (`run`, archivos...) solo se exponen con un token, `permissions.allow` explícito y
+> `host.commands`/`host.roots` definidos — ver `docs/security.md`.
 
 ## Tests
 
