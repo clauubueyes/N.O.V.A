@@ -18,7 +18,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 7 Desktop Agent | **PHASE 6 — Desktop Agent** | ⏳ paso 2 hecho |
 | PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | ✅ |
 | PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | ⏳ pasos 1-2 hechos |
-| — (web tools) | **PHASE 9 — Web Tools** | pendiente |
+| — (web tools) | **PHASE 9 — Web Tools** | ✅ |
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | pendiente |
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | pendiente |
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | pendiente |
@@ -124,11 +124,17 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 
 ## PHASE 9 — Web Tools
 
-- [ ] Herramientas controladas: búsqueda web, lectura de páginas, extracción (respetando robots/ToS/rate limits).
-- [ ] El LLM accede a Internet SOLO vía herramientas controladas (nunca acceso arbitrario directo).
-- [ ] Palabra clave: separación LLM / Web Tools.
+- [x] **Herramientas controladas** (`nova/tools/web/`), **off por defecto** (`web.enabled: false` y bajo `PermissionSystem`):
+  - `web_search`: búsqueda web sin API key (defecto DuckDuckGo HTML; `web.search_url` permite SearXNG/Brave). Devuelve título, URL y snippet.
+  - `web_fetch`: descarga una página (solo `http(s)`, rechaza userinfo y otros esquemas) y devuelve texto legible (título + contenido) con tope de tamaño (`web.max_bytes`) y de caracteres.
+  - `web_extract`: devuelve los enlaces (texto + URL) de una página para navegar un sitio.
+- [x] **El LLM accede a internet SOLO vía estas tools**: no existe ninguna primitiva de red en el Core; la única salida es `WebClient` (validación de URL -> robots.txt -> rate limit -> caps). Separación LLM / Web Tools.
+- [x] **Respeto a robots/ToS/rate limits**: `web.respect_robots` (parser RFC-9309 de robots.txt con `Allow`/`Disallow`, chequeo por host cacheado), `web.min_delay_s` (delay mínimo por host entre peticiones), `User-Agent` identificable (`NOVA/1.0 ...`), timeouts y límites por petición.
+- [x] Integración CLI (`/run web_search {...}`), API (`GET /v1/tools` + sesiones cuando `enabled`) y `nova-agent` — siempre bajo permisos y audit.
+- [x] Tests dedicados (`tests/test_web_tools.py`): parseo de resultados y páginas, max_results/max_chars, rechazo de esquemas no http(s) y userinfo, robots allow/disallow/allow-override/agent dirigido, off por defecto y denegado por permisos, extracción de enlaces relativos, audit. Total: **201** (180 previos + 21), 2 skips.
+- [ ] (Nota) Compresión/resumen semántico de conversaciones largas (compaction de memoria) como tarea de agente — candidata a PHASE 12 o fase propia.
 
-> Nota: la compresión/resumen semántico de conversaciones largas (compaction de memoria) también puede encajar aquí como tarea de un agente.
+> Separación de responsabilidades: el LLM propone consultas/URLs; las Web Tools ejecutan vía `WebClient` con sus propios límites; el `ToolRunner` decide con el Permission System y audita todo. Ver ADR-016.
 
 ## PHASE 10 — Voice
 

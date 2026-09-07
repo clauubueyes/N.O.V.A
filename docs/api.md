@@ -1,6 +1,6 @@
 # API
 
-Estado: **PHASE 8**. N.O.V.A. expone API **interna** de Python, un CLI, una **API REST** (FastAPI) con interfaz web, **Agents** y acceso remoto seguro con token.
+Estado: **PHASE 9**. N.O.V.A. expone API **interna** de Python, un CLI, una **API REST** (FastAPI) con interfaz web, **Agents**, acceso remoto seguro con token y Web Tools controladas.
 
 ## Proveedor LLM — `nova.llm.base`
 
@@ -66,7 +66,7 @@ s.api.host                   # str (127.0.0.1)
 s.api.port                   # int (8000)
 ```
 
-Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_EMBEDDING_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`, `NOVA_MEMORY_DB_FILE`, `NOVA_MEMORY_SESSION_ID`, `NOVA_MEMORY_MAX_CONTEXT`, `NOVA_MEMORY_SIMILARITY_THRESHOLD`, `NOVA_API_HOST`, `NOVA_API_PORT`.
+Variables de entorno soportadas: `NOVA_LLM_PROVIDER`, `NOVA_LLM_BASE_URL`, `NOVA_LLM_DEFAULT_MODEL`, `NOVA_LLM_EMBEDDING_MODEL`, `NOVA_LLM_TEMPERATURE`, `NOVA_LLM_TIMEOUT_S`, `NOVA_LOGGING_LEVEL`, `NOVA_LOGGING_FILE`, `NOVA_SESSION_MAX_HISTORY_MESSAGES`, `NOVA_SESSION_SYSTEM_PROMPT`, `NOVA_PERMISSIONS_AUTONOMY`, `NOVA_AUDIT_FILE`, `NOVA_MEMORY_DB_FILE`, `NOVA_MEMORY_SESSION_ID`, `NOVA_MEMORY_MAX_CONTEXT`, `NOVA_MEMORY_SIMILARITY_THRESHOLD`, `NOVA_API_HOST`, `NOVA_API_PORT`, `NOVA_WEB_ENABLED`, `NOVA_WEB_SEARCH_URL`, `NOVA_WEB_MIN_DELAY_S`, `NOVA_WEB_MAX_BYTES`, `NOVA_WEB_MAX_CHARS`.
 
 ## Contexto — `nova.core.session`
 
@@ -278,7 +278,7 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 |---|---|
 | `GET /healthz` | Salud: `provider`, `status`, `version`. |
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
-| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`). |
+| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`; web tools solo con `web.enabled`). |
 | `POST /v1/route` | PHASE 7 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "role", "model", "reason"}`. |
 | `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
 | `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |

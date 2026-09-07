@@ -126,6 +126,27 @@ class HostSettings(BaseSettings):
         return value
 
 
+class WebSettings(BaseSettings):
+    """PHASE 9 — controlled web tools configuration.
+
+    The LLM only reaches the Internet through these tools; it never gets a raw
+    network primitive. `enabled: false` (default) registers nothing. When enabled,
+    every request still has to pass the Permission System (denied by default).
+    Respects robots.txt and a per-host rate limit by default.
+    """
+
+    enabled: bool = False
+    user_agent: str = "NOVA/1.0 (N.O.V.A. local personal assistant)"
+    timeout_s: float = 12.0
+    max_redirects: int = 5
+    max_bytes: int = 1_000_000
+    max_chars: int = 4000
+    respect_robots: bool = True
+    min_delay_s: float = 1.0
+    search_url: str = "https://html.duckduckgo.com/html/?q={query}"
+    search_max: int = 5
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -140,6 +161,7 @@ class NovaSettings(BaseSettings):
     memory: MemorySettings = MemorySettings()
     api: APISettings = APISettings()
     host: HostSettings = HostSettings()
+    web: WebSettings = WebSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -189,6 +211,18 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "roots": "roots",
         "working_dir": "working_dir",
         "timeout_s": "timeout_s",
+    },
+    "web": {
+        "enabled": "enabled",
+        "user_agent": "user_agent",
+        "timeout_s": "timeout_s",
+        "max_redirects": "max_redirects",
+        "max_bytes": "max_bytes",
+        "max_chars": "max_chars",
+        "respect_robots": "respect_robots",
+        "min_delay_s": "min_delay_s",
+        "search_url": "search_url",
+        "search_max": "search_max",
     },
 }
 

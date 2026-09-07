@@ -23,11 +23,13 @@ from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
+from nova.tools.web import all_web_tools
 
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Desktop Agent (local process)                      |
 | Phase 7 - Model Router + Resource Manager | Ollama            |
+| Phase 9 - Web Tools (web_search / web_fetch / web_extract)    |
 +--------------------------------------------------------------+
 | Type /help for commands.  Type /exit to shut down.            |
 +--------------------------------------------------------------+"""
@@ -41,7 +43,10 @@ Commands:
   /route <text>     show which model the ModelRouter would pick (PHASE 7)
   /catalog          list the configured model catalog (PHASE 7)
   /tools            list registered tools
-  /run <name> <json> run a tool (e.g. /run open_app {"app":"notepad"})
+  /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
+  /run web_search   search the web (PHASE 9): /run web_search {"query":"..."}
+  /run web_fetch    read a page:   /run web_fetch {"url":"https://..."}
+  /run web_extract  list links:    /run web_extract {"url":"https://..."}
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
   /help             show this help"""
@@ -78,8 +83,9 @@ def main() -> int:
     )
     memory_tools = [RememberTool(memory), MemorySearchTool(memory)]
     host_tools = all_host_tools(settings.host)
+    web_tools = all_web_tools(settings.web)
 
-    registry = create_registry(memory_tools + host_tools, base=tool_registry)
+    registry = create_registry(memory_tools + host_tools + web_tools, base=tool_registry)
     runner = ToolRunner(
         registry=registry,
         permissions=PermissionSystem(settings.permissions),

@@ -18,12 +18,14 @@ from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
+from nova.tools.web import all_web_tools
 
 BANNER = """\
 +--------------------------------------------------------------+
 | N.O.V.A. - Neural Operations & Virtual Assistant              |
 | Phase 6 - Desktop Agent (host: open_app/open_url/run + files) | Ollama |
 | Phase 7 - Model Router + Resource Manager                    |
+| Phase 9 - Web Tools (web_search / web_fetch / web_extract)    |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -42,6 +44,9 @@ Commands:
   /run read_file    read a file inside host.roots (e.g. /run read_file {"path":"..."})
   /run write_file   write a file inside host.roots (parent dir must exist)
   /run list_files   list a directory inside host.roots (e.g. /run list_files {"path":"..."})
+  /run web_search   search the web (PHASE 9): /run web_search {"query":"..."}
+  /run web_fetch    read a page:   /run web_fetch {"url":"https://..."}
+  /run web_extract  list links:    /run web_extract {"url":"https://..."}
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
   /agents           list available agents
@@ -95,8 +100,9 @@ def main() -> int:
     )
     memory_tools = [RememberTool(memory), MemorySearchTool(memory)]
     host_tools = all_host_tools(settings.host)
+    web_tools = all_web_tools(settings.web)
 
-    tools_registry = create_registry(memory_tools + host_tools, base=tool_registry)
+    tools_registry = create_registry(memory_tools + host_tools + web_tools, base=tool_registry)
     tools_runner = ToolRunner(
         registry=tools_registry,
         permissions=PermissionSystem(settings.permissions),

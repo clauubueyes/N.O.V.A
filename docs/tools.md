@@ -25,7 +25,7 @@ El registro real (qué tools hay y sus schemas) lo expone el propio sistema: `/t
 
 ## Host (`nova/tools/host/`) — PHASE 6
 
-Solo disponibles en **CLI y `nova-agent`** (proceso local); **no** expuestas en la API.
+Disponibles en **CLI y `nova-agent`**; en la API solo con `api.host_enabled: true` (PHASE 8, exige token).
 
 | Herramienta | Argumentos | Descripción | Riesgo |
 |---|---|---|---|
@@ -66,3 +66,49 @@ host:
 
 Los comandos de elevación/destructivos son imposibles de permitir: `nova.tools.host.terminal.BLOCKED_COMMANDS`
 los bloquea siempre (ver [security.md](security.md)).
+
+## Web (`nova/tools/web/`) — PHASE 9
+
+**Off por defecto** (`web.enabled: false`): no se registra nada. Con `enabled: true` se registran las
+tres tools bajo el mismo `PermissionSystem` (denegadas hasta no añadirlas a `permissions.allow` o
+confirmarlas en `ask`). El LLM accede a Internet **solo** a través de estos tools; no existe ninguna
+primitiva de red en el Core.
+
+| Herramienta | Argumentos | Descripción | Riesgo |
+|---|---|---|---|
+| `web_search` | `query`, `max_results` (1-20) | Búsqueda web sin API key (defecto DuckDuckGo HTML). Devuelve título, URL y snippet. | Confirmado |
+| `web_fetch` | `url`, `max_chars` (100-20000) | Descarga una página (solo `http(s)`, sin userinfo) y devuelve título + texto legible. | Confirmado |
+| `web_extract` | `url`, `max_links` (1-100) | Devuelve los enlaces (texto + URL) de una página para explorar un sitio. | Confirmado |
+
+### Política de red (`nova/tools/web/client.py` — `WebClient`)
+
+Cada petición pasa por, en orden:
+
+1. **Validación de URL**: solo esquemas `http`/`https`, host obligatorio, sin `usuario:contraseña@`.
+2. **`robots.txt`** (`web.respect_robots`, defecto `true`): parser RFC-9309 (Allow/Disallow, prefijo más
+   largo gana, Allow desempata). Por defecto se respeta.
+3. **Rate limit por host** (`web.min_delay_s`, defecto 1 s): mínimo entre peticiones al mismo host,
+   compartido por las tres tools.
+4. **Límites**: `web.max_bytes` (defecto 1 MB, corta la descarga), `web.max_redirects` (5),
+   `web.timeout_s` (12 s), `web.max_chars` (4000 caracteres devueltos al LLM por página/search).
+5. **User-Agent identificable** (`web.user_agent`): `NOVA/1.0 ...` para `who are you` de robots.py.
+
+### Configuración (PHASE 9)
+
+```yaml
+web:
+  enabled: false                  # true registra web_search/web_fetch/web_extract
+  user_agent: "NOVA/1.0 (N.O.V.A. local personal assistant)"
+  timeout_s: 12.0
+  max_redirects: 5
+  max_bytes: 1000000
+  max_chars: 4000
+  respect_robots: true
+  min_delay_s: 1.0
+  search_url: "https://html.duckduckgo.com/html/?q={query}"  # o SearXNG/Brave API
+  search_max: 5
+```
+
+La búsqueda usa el endpoint `web.search_url` (plantilla con `{query}`). El defecto es DuckDuckGo HTML
+(sin API key); para producción se puede usar un SearXNG self-hosted (mismo `search_url`) o la Brave
+Search API free tier. El LLM no nota la diferencia: la tool que usa es `web_search`.

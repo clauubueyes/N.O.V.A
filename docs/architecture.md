@@ -55,6 +55,7 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.tools.host` | Host tools seguro (PHASE 6): `open_app`, `open_url`, `run` — allowlist de comandos y apps configurables, denegadas por defecto. |
 | `nova.tools.host.files` | Tools de archivos acotadas por `host.roots`: `read_file`, `write_file`, `list_files`. |
 | `nova.tools.host.paths` | `PathBounds`: reduce y comprueba que cada ruta toca solo dentro de `host.roots` (evita escapes `../`, symlinks). |
+| `nova.tools.web` | Web Tools controladas (PHASE 9): `web_search`, `web_fetch`, `web_extract` — internet solo vía `WebClient` (URL http(s) -> robots.txt -> rate limit -> caps), off por defecto. |
 | `nova.tools.registry` | Registro de herramientas por nombre. |
 | `nova.tools.permissions` | `PermissionSystem`: autonomía (`off`/`ask`/`full`) + reglas allow/deny. |
 | `nova.tools.runner` | `ToolRunner`: permiso -> validación -> ejecución, auditando cada paso. |
@@ -207,6 +208,38 @@ AuditLog (JSON lines) + Resultado -> Usuario
   `timeout_s`.
 - Referencias: [security.md](security.md) y [tools.md](tools.md).
 
+## Web Tools (PHASE 9) — separación LLM / Web
+
+El LLM **no tiene primitivas de red**: todo tráfico sale por `WebClient`, compartido por las tres tools
+(vía el contenedor `WebTools`), con el mismo flujo propone->decide->ejecuta->audita:
+
+```
+LLM propone query/URL
+  v
+ToolRunner  (permisos: allow / deny / ask -> denegado en API)
+  v
+Web Tool:
+  web_search -> validación URL -> robots.txt -> rate limit -> DDG/SearXNG/Brave (search_url) -> títulos/URLs/snippets
+  web_fetch  -> validación URL -> robots.txt  -> rate limit -> descarga (max_bytes, redirects, timeout) -> texto (max_chars)
+  web_extract-> (igual) -> enlaces (texto + URL, max_links)
+  v
+AuditLog (una línea por petición) + Resultado -> LLM
+```
+
+Cada petición pasa por un orden fijo de barreras en `nova.tools.web.client`:
+
+1. Validación estricta de URL: solo `http(s)`, con host, **sin userinfo**.
+2. `robots.txt` por host (RFC-9309), si `web.respect_robots` (true).
+3. Rate limit por host (`web.min_delay_s`) — el rate limiter es **global** (compartido por las tres tools).
+4. Caps: `web.max_bytes` corta la descarga; `web.max_chars` acota la salida; `web.timeout_s` + `web.max_redirects`.
+5. User-Agent identificable (`NOVA/1.0 ...`).
+
+El registro lo hace `all_web_tools(settings.web)`, que devuelve `[]` cuando `web.enabled: false` (off por
+defecto). Integración: CLI y `nova-agent` (`BANNER`/HELP y registry `memory + host + web`), y API
+(`GET /v1/tools` + sesiones) siempre bajo el Permission System y audit. La búsqueda es pluggable
+(`web.search_url` con `{query}`; DuckDuckGo HTML por defecto, sin API key). Detalle en [tools.md](tools.md)
+y política en [security.md](security.md).
+
 ## Arquitectura objetivo (evolución incremental)
 
 La visión de producto mapea sobre esta estructura sin saltos de arquitectura:
@@ -244,7 +277,7 @@ del host.
 
 ## Caminos futuros (incremental)
 
-- **PHASE 8-12** — Acceso remoto con auth, web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
+- **PHASE 9-12** — Web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
 
 ## Restricciones de diseño
 

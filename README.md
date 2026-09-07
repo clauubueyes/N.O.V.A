@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 8 — Acceso remoto + auth + frontend** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`, y **acceso remoto seguro con token Bearer + CORS + host tools vinculadas a la API**). Pendiente de la fase: refinamiento de la guía de despliegue remoto (ver [docs/roadmap.md](docs/roadmap.md)).
+Estado actual: **PHASE 9 — Web Tools** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`, **acceso remoto seguro con token Bearer + CORS + host tools vinculadas a la API**, y **web tools controladas** `web_search`/`web_fetch`/`web_extract` con robots.txt + rate limit + caps, off por defecto y separación LLM / Web). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -99,6 +99,29 @@ api:
 - El **LLM nunca corre en serverless**: el frontend es un cliente estático; el backend (LLM + memoria + tools) vive solo en tu dispositivo.
 - Guía completa en [docs/setup.md](docs/setup.md) y límites en [docs/security.md](docs/security.md).
 
+## Web Tools (PHASE 9)
+
+El LLM accede a Internet **solo** a través de tools controladas (separación LLM / Web, ADR-016): `web_search`,
+`web_fetch` y `web_extract`. **Off por defecto** (`web.enabled: false`); al activarlas siguen bajo el
+Permission System (añádelas a `permissions.allow` o confírmalas en `ask`):
+
+```yaml
+web:
+  enabled: true
+  min_delay_s: 1.0       # rate limit por host
+  max_chars: 4000        # lo que ve el LLM por petición
+```
+
+```text
+/run web_search {"query":"mejores practicas python"}
+/run web_fetch {"url":"https://docs.python.org/es/3/"}
+/run web_extract {"url":"https://docs.python.org/es/3/"}
+```
+
+Cada petición pasa por: validación de URL (solo http(s), sin userinfo) -> `robots.txt` -> rate limit por
+host -> caps de bytes/caracteres, con User-Agent identificable. La búsqueda usa `web.search_url`
+(DuckDuckGo sin API key por defecto; permite SearXNG/Brave). Detalle en [docs/tools.md](docs/tools.md).
+
 ## Agentes (PHASE 5)
 
 Los agentes dejan que el LLM **proponga** tools y N.O.V.A. las ejecute bajo el Permission System. Hay 5 presets: `general`, `coding`, `research`, `system` y `automation`.
@@ -120,6 +143,7 @@ nova/
   llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro + ResourceManager + ModelRouter (PHASE 7)
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
     host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
+    web/             Web tools controladas: web_search/web_fetch/web_extract (PHASE 9)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)
@@ -151,7 +175,7 @@ Arquitectura actual:
 | [docs/development.md](docs/development.md) | Guía de desarrollo |
 | [docs/decisions.md](docs/decisions.md) | Decisiones arquitectónicas (ADR) |
 | [docs/security.md](docs/security.md) | Modelo de seguridad y permisos |
-| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host) |
+| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web) |
 | [docs/models.md](docs/models.md) | Modelos y política de selección |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Problemas comunes |
 | [docs/api.md](docs/api.md) | APIs internas y externas |

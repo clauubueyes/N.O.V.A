@@ -143,6 +143,26 @@ Reglas:
 - El móvil (PHASE 8) accede vía la API con el Desktop Agent como brazo de ejecución del host, bajo
   las mismas reglas de permisos y audit.
 
+## Web Tools (PHASE 9) — separación LLM / Web
+
+- **El LLM no tiene primitivas de red**: internet solo se alcanza vía las tools `web_search`,
+  `web_fetch` y `web_extract`. No existe `requests`/`httpx` desnudo en el Core; la única salida es
+  `nova.tools.web.client.WebClient`, que aplica un orden fijo de barreras.
+- **Off y denegadas por defecto**: `web.enabled: false` (defecto) no registra nada; con `true`, las
+  tools siguen bajo el `PermissionSystem` (añadirlas a `permissions.allow` o confirmar en `ask`).
+- **Por cada petición**, en orden:
+  1. Validación estricta de URL: solo `http(s)`, con host, sin `usuario@`.
+  2. `robots.txt` (parser RFC-9309) si `web.respect_robots` (true). `Disallow` bloquea; `Allow`
+     desempata por prefijo más largo.
+  3. Rate limit por host (`web.min_delay_s`) y timeouts (`web.timeout_s`, `web.max_redirects`).
+  4. Caps: `web.max_bytes` corta la descarga; `web.max_chars` acota lo que llega al LLM.
+  5. User-Agent identificable `NOVA/1.0 ...` (política de cortesía ante robots / who-are-you).
+- **Riesgo**: consultas/páginas web pueden filtrar datos del usuario (tan solo ver qué URL se pide).
+  N.O.V.A. nunca envía contenido propio de la conversación salvo el propio query/URL que pide el LLM.
+- Elección (ADR-016): separar el acceso a red en una capa de tools controladas en lugar de darle al
+  modelo un cliente HTTP genérico — si la extracción falla, degrada con un `ToolResult` de error y el
+  resto del sistema (permisos, audit) aplica igual que con cualquier otra tool.
+
 ## Privacidad (ADR-013)
 
 - Local-first: conversaciones y datos permanecen en el dispositivo salvo consentimiento explícito.

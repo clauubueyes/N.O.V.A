@@ -137,3 +137,15 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   5. **TLS por proxy reverso**: exponer la API a Internet requiere TLS delante (p. ej. Caddy/nginx/Cloudflare). Sin TLS, la API no se publica — ver `docs/security.md`.
 - **Consecuencias:** las host tools se listan en `GET /v1/tools` y se inyectan en las sesiones de la API solo con `host_enabled`. El frontend se sirve igual desde la propia API (`/`) — misma origin, sin CORS — o estático con `?api=<base>`. Tests en `tests/test_api_auth.py`.
 - **Estado:** aceptada.
+
+## ADR-016 — Web Tools: internet solo vía herramientas controladas (separación LLM / Web)
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 9 da al asistente acceso a internet (búsqueda, lectura y extracción). El stack ya es local-first (ADR-013) y "el LLM propone, N.O.V.A. decide" (ADR-007). Dar al modelo un cliente HTTP genérico rompería esa separación y permitiría tráfico arbitrario sin barreras (sin robots, sin rate limit, sin caps) y sin visibilidad en el audit.
+- **Decisión:**
+  1. **Sin primitivas de red en el Core**: la única salida es `nova/tools/web/client.py::WebClient`, usado por las three tools `web_search`, `web_fetch`, `web_extract`. Cada petición pasa por orden fijo: validación de URL (solo `http(s)`, con host, sin userinfo) -> `robots.txt` (respecto por defecto) -> rate limit por host -> caps de bytes/caracteres -> User-Agent identificable.
+  2. **Off por defecto**: `web.enabled: false` no registra nada. Con `true` siguen bajo el `PermissionSystem` (denegadas hasta `permissions.allow` o confirmación `ask`) y el audit de `ToolRunner`.
+  3. **Búsqueda pluggable sin API key**: `web.search_url` es plantilla con `{query}`; por defecto DuckDuckGo HTML. Para producción, un SearXNG self-hosted o la Brave Search API free tier sustituyen el endpoint sin cambiar la interfaz de la tool.
+  4. **Robots y cortesía**: parser RFC-9309 (Allow/Disallow, prefijo más largo gana) cacheado por host; `min_delay_s` entre peticiones al mismo host; `max_redirects`/`max_bytes`/`max_chars` acotan el impacto.
+- **Consecuencias:** el LLM propone query/URL; las Web Tools ejecutan con sus límites; `ToolRunner` decide y audita. Cualquier fetch se ve en `logs/audit.nova.jsonl` como cualquier tool. Tests en `tests/test_web_tools.py` (fakes con `httpx.MockTransport`).
+- **Estado:** aceptada.

@@ -111,3 +111,24 @@ host:
     # - "%USERPROFILE%\\Documents"
   working_dir: null
   timeout_s: 30.0
+
+web:
+  # PHASE 9 — Web Tools. OFF by default: with enabled: false nothing is registered.
+  # The LLM reaches the Internet ONLY through these tools (never direct network
+  # access). Each call still goes through the Permission System (denied by
+  # default; add the tool names under `permissions.allow` to use them).
+  enabled: false
+  # user_agent: polite, identifiable client for "whom are you?" robots checks
+  user_agent: "NOVA/1.0 (N.O.V.A. local personal assistant)"
+  # Per-request and per-host limits (robots + ToS + rate limiting).
+  timeout_s: 12.0
+  max_redirects: 5
+  max_bytes: 1000000          # Hard cap on the downloaded body
+  max_chars: 4000             # Text returned to the LLM per page
+  respect_robots: true        # Respect robots.txt Disallow rules
+  min_delay_s: 1.0            # Minimum time between requests to the same host
+  # Search endpoint: a {query} template. Default is DuckDuckGo HTML (no API key).
+  # For production consider a self-hosted SearXNG or the Brave Search API (free
+  # tier) and set search_url accordingly; the LLM keeps the same tool interface.
+  search_url: "https://html.duckduckgo.com/html/?q={query}"
+  search_max: 5

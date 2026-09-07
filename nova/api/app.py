@@ -46,6 +46,7 @@ from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
+from nova.tools.web import all_web_tools
 
 logger = get_logger("api.app")
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -85,6 +86,8 @@ def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
     if settings.api.host_enabled:
         for tool in all_host_tools(settings.host):
             infos.append(ToolInfoOut(name=tool.name, description=tool.description))
+    for tool in all_web_tools(settings.web):
+        infos.append(ToolInfoOut(name=tool.name, description=tool.description))
     return infos
 
 
@@ -162,9 +165,11 @@ def create_app(
             max_context=settings.memory.max_context,
             similarity_threshold=settings.memory.similarity_threshold,
         )
+        web_tools = all_web_tools(settings.web)
         registry = create_registry(
             [RememberTool(memory), MemorySearchTool(memory)]
-            + (all_host_tools(settings.host) if settings.api.host_enabled else []),
+            + (all_host_tools(settings.host) if settings.api.host_enabled else [])
+            + web_tools,
             base=base_tools_registry,
         )
         runner = ToolRunner(

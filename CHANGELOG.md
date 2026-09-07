@@ -2,6 +2,17 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.9.0] - 2026-09-07
+
+### Añadido — PHASE 9: Web Tools (separación LLM / Web)
+
+- **Paquete `nova/tools/web/`**: Web Tools controladas `web_search` (resultados sin API key: DuckDuckGo HTML por defecto, pluggable con `web.search_url`), `web_fetch` (texto legible de una página) y `web_extract` (enlaces de una página). **El LLM no tiene primitivas de red**: toda salida pasa por `WebClient` con barreras en orden fijo — validación estricta de URL (solo `http(s)`, sin userinfo) -> `robots.txt` (RFC-9309, Allow/Disallow, prefijo más largo gana) -> rate limit por host (`min_delay_s`) -> caps (`max_bytes` corta la descarga, `max_chars` acota lo que ve el LLM, `timeout_s`, `max_redirects`) — con User-Agent identificable (`NOVA/1.0 ...`).
+- **Off por defecto**: `web.enabled: false` no registra nada (`all_web_tools()` -> `[]`); con `true` las tools siguen bajo el `PermissionSystem` + audit (regla ADR-016).
+- **Config**: `WebSettings` en `nova/core/config.py` (enabled, user_agent, timeout_s, max_redirects, max_bytes, max_chars, respect_robots, min_delay_s, search_url, search_max) + env `NOVA_WEB_ENABLED`/`NOVA_WEB_SEARCH_URL`/etc. y sección `web:` en `config/config.yaml`.
+- **Integración**: registro en CLI (`/run web_search {...}`), `nova-agent` y API (`GET /v1/tools` + sesiones cuando `enabled`) bajo permisos y audit, compartiendo un único `WebClient` (rate limiter global por host) vía `all_web_tools`.
+- **Tests**: `tests/test_web_tools.py` con 21 tests (fakes con `httpx.MockTransport`): parseo DDG/páginas, max_results/max_chars/max_links, rechazo de esquemas no http(s) y userinfo, robots allow/disallow/allow-override/agente dirigido/Disallow-vacío, off por defecto y denegado por permisos, extracción de enlaces relativos, audit. Total: **201** (180 previos + 21), 2 skips.
+- **Docs**: `docs/roadmap.md` (PHASE 9), `docs/tools.md` (catálogo + política WebClient), `docs/security.md` (separación LLM/Web), `docs/architecture.md` (sección propio), `docs/api.md` (estado, /v1/tools, env vars), `README.md` (sección Web Tools) y `docs/decisions.md` (ADR-016). Versión: **0.9.0**.
+
 ## [Unreleased]
 
 Pendientes del análisis estratégico aún no implementados:
