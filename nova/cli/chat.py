@@ -13,6 +13,7 @@ from nova.llm.registry import create_provider
 from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.memory.retriever import MemoryHit
+from nova.plugins import load_plugin_tools
 from nova.tools import ToolResult, registry as tool_registry
 from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
@@ -28,6 +29,7 @@ BANNER = """\
 | Phase 7 - Model Router + Resource Manager                    |
 | Phase 9 - Web Tools (web_search / web_fetch / web_extract)    |
 | Phase 10 - Voice (STT/Vosk + TTS/pyttsx3, local)              |
+| Phase 11 - Plugins (text_tools / units, PHASE 11)             |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -39,6 +41,7 @@ Commands:
   /route <text>     show which model the ModelRouter would pick (PHASE 7)
   /catalog          list the configured model catalog (PHASE 7)
   /tools            list registered tools
+  /plugins          list loaded plugins and their tools (PHASE 11)
   /run <name> <json> run a tool (e.g. /run calculate {"expression":"2+2"})
   /run open_app     launch a configured application (e.g. /run open_app {"app":"notepad"})
   /run open_url     open a URL in the browser (e.g. /run open_url {"url":"https://example.com"})
@@ -108,6 +111,7 @@ def main() -> int:
     web_tools = all_web_tools(settings.web)
 
     tools_registry = create_registry(memory_tools + host_tools + web_tools, base=tool_registry)
+    plugin_infos = load_plugin_tools(settings.plugins, registry=tools_registry)
     tools_runner = ToolRunner(
         registry=tools_registry,
         permissions=PermissionSystem(settings.permissions),
@@ -225,6 +229,14 @@ def main() -> int:
                 elif command == "tools":
                     for tool in tools_registry.all():
                         print(f"  - {tool.name:<14} {tool.description}")
+                elif command == "plugins":
+                    if not plugin_infos:
+                        print("No plugins loaded. Enable them in config/config.yaml -> plugins.")
+                        continue
+                    for info in plugin_infos:
+                        print(f"  - {info.name:<14} {info.description}")
+                        for tool_name in info.tools:
+                            print(f"       {tool_name}")
                 elif command == "remember":
                     text = " ".join(parts[1:]).strip()
                     if not text:

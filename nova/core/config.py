@@ -163,6 +163,26 @@ class VoiceTTSSettings(BaseSettings):
     rate: int = 180
 
 
+class PluginSettings(BaseSettings):
+    """PHASE 11 — plugins configuration.
+
+    `enabled` lists the built-in plugins to activate by name (each provides
+    tools that still go through the Permission System + audit). `dir` (optional)
+    points to a folder whose `*_plugin.py` modules expose a `PLUGIN` object to
+    load custom plugins. Empty `enabled` + no `dir` = no plugins registered.
+    """
+
+    enabled: list[str] = Field(default_factory=list)
+    dir: str | None = None
+
+    @field_validator("enabled", mode="before")
+    @classmethod
+    def _split_enabled(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+
 class VoiceSettings(BaseSettings):
     """PHASE 10 — local voice pipeline (STT -> chat -> TTS).
 
@@ -195,6 +215,7 @@ class NovaSettings(BaseSettings):
     host: HostSettings = HostSettings()
     web: WebSettings = WebSettings()
     voice: VoiceSettings = VoiceSettings()
+    plugins: PluginSettings = PluginSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -263,6 +284,10 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "device": "device",
         "stt_backend": "stt.backend",
         "tts_backend": "tts.backend",
+    },
+    "plugins": {
+        "enabled": "enabled",
+        "dir": "dir",
     },
 }
 

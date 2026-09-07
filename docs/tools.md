@@ -112,3 +112,42 @@ web:
 La búsqueda usa el endpoint `web.search_url` (plantilla con `{query}`). El defecto es DuckDuckGo HTML
 (sin API key); para producción se puede usar un SearXNG self-hosted (mismo `search_url`) o la Brave
 Search API free tier. El LLM no nota la diferencia: la tool que usa es `web_search`.
+
+## Plugins (`nova/plugins/`) — PHASE 11
+
+**Off por defecto** (`plugins.enabled` vacío + `dir` nulo): no se carga nada. Un plugin amplía el
+catálogo de tools registrando `BaseTool`s en el `ToolRegistry`; cada tool sigue pasando por el mismo
+`PermissionSystem` + audit (una tool de plugin puede denegarse o requerir confirmación).
+
+### Contrato (ADR-018)
+
+```python
+from nova.plugins.base import Plugin
+
+class MyPlugin(Plugin):
+    name = "mi_plugin"
+    description = "Qué hace."
+
+    def tools(self) -> list[BaseTool]:
+        return [MyTool()]          # subclases de nova.tools.base.BaseTool
+```
+
+Carga en CLI / `nova-agent` / API: `load_plugin_tools(settings.plugins, registry=...)`.
+
+### Built-ins
+
+| Plugin | Herramientas | Descripción | Riesgo |
+|---|---|---|---|
+| `text_tools` | `text_base64_encode`, `text_base64_decode`, `text_slugify`, `text_uuid` | Utilidades de texto (base64, URL-safe slug, UUID v4). | Bajo |
+| `units` | `convert_length`, `convert_weight`, `convert_temperature` | Conversión de unidades (m/km/cm/mm/ft/in/mi/yd; kg/g/mg/lb/oz/t; c/f/k). | Bajo |
+
+### Configuración (PHASE 11)
+
+```yaml
+plugins:
+  enabled: []            # built-ins por nombre, p. ej. ["text_tools", "units"]
+  dir: null              # carpeta con módulos *_plugin.py que exponen un objeto PLUGIN
+```
+
+Env: `NOVA_PLUGINS_ENABLED=text_tools,units`, `NOVA_PLUGINS_DIR=path`. Un plugin roto se loguea y se
+omite sin romper el arranque.

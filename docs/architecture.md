@@ -262,6 +262,27 @@ mic (SoundDeviceSource, hilo de fondo)  --PCM16 --> VoskSTT (offline) --> texto
 - CLI: `/voice` (bucle, ENTER al terminar, `/voice stop`) y `/say <texto>`. Política en
   [security.md](security.md).
 
+## Plugins (PHASE 11) — ADR-018
+
+Los plugins amplían el **catálogo de tools**, nunca los permisos. Un `Plugin` (`nova/plugins/base.py`)
+es una fábrica nombrada de `BaseTool`:
+
+```
+config.yaml -> plugins.enabled (nombres builtin) + plugins.dir (módulos *_plugin.py con PLUGIN)
+   --> load_plugin_tools(settings, registry)   (nova/plugins/loader.py)
+   --> registry.register(tool) por cada tool del plugin
+   --> ToolRunner (mismo PermissionSystem + audit que cualquier tool del Core)
+```
+
+- Contrato mínimo: `name`/`description` + `tools() -> list[BaseTool]` (+ `close()` opcional).
+  Sin dependencias nuevas; las tools usan `BaseTool` (schema Pydantic + validación + `ToolResult`).
+- Carga **off por defecto** (`plugins.enabled` vacío + `dir` nulo = nada se carga). Un plugin roto
+  (import, contrato inválido, tools con fallo) se loguea y se **omite sin romper el arranque**.
+- Built-ins: `text_tools` (base64, slugify, UUID) y `units` (longitud/peso/temperatura) — puros y
+  sin APIs externas (local-first, ADR-013).
+- Exposición: CLI `/plugins`, `nova-agent` (carga en su registry) y API `GET /v1/plugins` +
+  tools de plugins visibles en `GET /v1/tools` y en las sesiones. Detalle en [tools.md](tools.md).
+
 ## Arquitectura objetivo (evolución incremental)
 
 La visión de producto mapea sobre esta estructura sin saltos de arquitectura:

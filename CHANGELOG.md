@@ -2,6 +2,18 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.11.0] - 2026-09-07
+
+### Añadido — PHASE 11: Plugins (interfaz + cargador + ejemplos local-first)
+
+- **Interfaz `Plugin`** (`nova/plugins/base.py`): contrato mínimo `name`/`description` + `tools() -> list[BaseTool]` y `close()` opcional. Un plugin es una fábrica nombrada de `BaseTool`; `PluginInfo` describe name/description/tools para CLI y API.
+- **Cargador** (`nova/plugins/loader.py`): `load_plugin_tools(settings, registry=...)` instancia los plugins, registra sus tools en un `ToolRegistry` y devuelve `list[PluginInfo]`. Built-ins activados por nombre en `plugins.enabled`; directorio opcional `plugins.dir` escaneado para `*_plugin.py` con objeto `PLUGIN`. Un plugin roto se loguea y se **omite sin romper el arranque** (ADR-018). Un plugin nunca bypasea seguridad: sus tools van por el mismo `ToolRunner` + `PermissionSystem` + audit.
+- **Plugins de ejemplo** (`nova/plugins/builtin/`): `text_tools` (base64 encode/decode, slugify, UUID) y `units` (conversión de longitud/peso/temperatura) — puros, sin APIs externas ni dependencias (local-first, ADR-013).
+- **Config**: `PluginSettings` (enabled, dir) en `nova/core/config.py`; `_apply_env` con `NOVA_PLUGINS_ENABLED`/`NOVA_PLUGINS_DIR`; sección `plugins:` en `config/config.yaml`.
+- **Integración**: CLI `/plugins` (lista cargados + sus tools), `nova-agent`, API `GET /v1/plugins` (nuevo) y tools de plugins visibles en `GET /v1/tools` y sesiones — siempre bajo permisos y audit.
+- **Tests**: `tests/test_plugins.py` con 20 tests (loader default vacío, built-ins registran tools, desconocido ignorado, info de tools, external dir, plugin roto/sin PLUGIN omitido, dir inexistente, comportamiento de tools, y seguridad: off deniega, audita, validación intacta). Total: **239** (219 previos + 20), 2 skips.
+- **Docs**: `docs/roadmap.md` (PHASE 11 ✅), `docs/decisions.md` (ADR-018), `docs/architecture.md`, `docs/api.md`, `docs/setup.md`, `docs/tools.md`, `README.md`. Versión: **0.11.0**.
+
 ## [0.10.0] - 2026-09-07
 
 ### Añadido — PHASE 10: Voice (STT/TTS local, sin APIs de pago)

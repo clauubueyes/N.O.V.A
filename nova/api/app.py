@@ -41,10 +41,11 @@ from nova.llm.base import (
 from nova.llm.registry import create_provider
 from nova.llm.router import ModelRouter, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
+from nova.plugins import load_plugin_tools
 from nova.tools import registry as base_tools_registry
 from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
-from nova.tools.registry import create_registry
+from nova.tools.registry import ToolRegistry, create_registry
 from nova.tools.runner import ToolRunner
 from nova.tools.web import all_web_tools
 
@@ -87,6 +88,10 @@ def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
         for tool in all_host_tools(settings.host):
             infos.append(ToolInfoOut(name=tool.name, description=tool.description))
     for tool in all_web_tools(settings.web):
+        infos.append(ToolInfoOut(name=tool.name, description=tool.description))
+    plugin_registry = ToolRegistry()
+    load_plugin_tools(settings.plugins, registry=plugin_registry)
+    for tool in plugin_registry.all():
         infos.append(ToolInfoOut(name=tool.name, description=tool.description))
     return infos
 
@@ -172,6 +177,7 @@ def create_app(
             + web_tools,
             base=base_tools_registry,
         )
+        load_plugin_tools(settings.plugins, registry=registry)
         runner = ToolRunner(
             registry=registry,
             permissions=state.permissions,
@@ -229,6 +235,17 @@ def create_app(
     @app.get("/v1/tools", response_model=list[ToolInfoOut])
     def list_tools() -> list[ToolInfoOut]:
         return _tool_infos(settings)
+
+    @app.get("/v1/plugins")
+    def list_plugins() -> dict[str, Any]:
+        from nova.plugins import load_plugin_tools
+
+        plugin_registry = ToolRegistry()
+        infos = load_plugin_tools(settings.plugins, registry=plugin_registry)
+        return {
+            "plugins": [info.to_dict() for info in infos],
+            "loaded": [info.name for info in infos],
+        }
 
     @app.post("/v1/route")
     def route(req: ChatRequest) -> dict[str, str]:

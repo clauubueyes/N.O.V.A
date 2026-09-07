@@ -96,7 +96,23 @@ API REST + interfaz web (PHASE 4):
 
 Abre `http://127.0.0.1:8000/` (chat web) o `http://127.0.0.1:8000/docs` (OpenAPI). Host/puerto en `config/config.yaml` -> `api` o con `NOVA_API_HOST` / `NOVA_API_PORT`.
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/plugins`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/help`.
+
+### Plugins (PHASE 11)
+
+Carga **off por defecto**. Para activar los built-in o un directorio propio, edita `config/config.yaml`:
+
+```yaml
+plugins:
+  enabled:
+    - text_tools
+    - units
+  dir: null            # o ruta a una carpeta con módulos *_plugin.py que exponen PLUGIN
+```
+
+Las tools de los plugins son tools normales: para que el LLM las ejecute sin preguntar, añádelas a
+`permissions.allow` (p. ej. `text_slugify`, `convert_length`) o sube `autonomy`. Ver los nombres con
+`/plugins` en el chat o `GET /v1/plugins` en la API.
 
 ### Agentes (PHASE 5)
 

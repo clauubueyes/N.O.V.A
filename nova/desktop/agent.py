@@ -18,6 +18,7 @@ from nova.core.session import ChatSession
 from nova.llm.registry import create_provider
 from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
+from nova.plugins import load_plugin_tools
 from nova.tools import ToolResult, registry as tool_registry
 from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
@@ -86,6 +87,7 @@ def main() -> int:
     web_tools = all_web_tools(settings.web)
 
     registry = create_registry(memory_tools + host_tools + web_tools, base=tool_registry)
+    load_plugin_tools(settings.plugins, registry=registry)
     runner = ToolRunner(
         registry=registry,
         permissions=PermissionSystem(settings.permissions),

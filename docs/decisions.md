@@ -161,3 +161,14 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   4. **La voz entra por el mismo chat**: `chat_line(text)` compartido — la voz solo origina texto; memoria, router, tools y audit del teclado aplican idénticos.
 - **Consecuencias:** el CLI gana `/voice` y `/say`; el bucle es local (un futuro uso remoto móvil->API requeriría exponer audio y se decidiría aparte, con el consentimiento explícito del ADR-013). Tests en `tests/test_voice.py`.
 - **Estado:** aceptada.
+## ADR-018 — Plugins: el plugin amplía tools, nunca los permisos
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 11 quiere que terceros (o el propio usuario) amplíen N.O.V.A. sin reescribir el Core. El roadmap exige evitar overengineering (primero la interfaz, después plugins concretos). Podría caerse en un sistema de plugins que ejecute código arbitrario al margen de la seguridad (ADR-002/ADR-007).
+- **Decisión:**
+  1. **Contrato mínimo `Plugin`** (`nova/plugins/base.py`): `name`/`description` + `tools() -> list[BaseTool]`. Sin dependencias nuevas; los plugins entregan herramientas ya existentes de `BaseTool` (schemas Pydantic + validación + `ToolResult`).
+  2. **Carga controlada** (`nova/plugins/loader.py`): built-ins por nombre en `plugins.enabled` y directorio opcional `plugins.dir` cuyos `*_plugin.py` exponen un objeto `PLUGIN`. Un plugin que falla (import, contrato, tools) se registra en el log y se **omite sin romper el arranque**.
+  3. **El plugin nunca bypasea seguridad**: las tools del plugin se registran en el mismo `ToolRegistry` y pasan por el mismo `ToolRunner`/`PermissionSystem`/audit que cualquier tool del Core. Una tool de plugin puede denegarse, requerir confirmación o fallar validación como cualquier otra.
+  4. **Off por defecto**: `plugins.enabled` vacío + `dir` nulo = nada se carga. Los plugins de ejemplo (`text_tools`, `units`) son puros y sin APIs externas (local-first, ADR-013).
+- **Consecuencias:** CLI (`/plugins`), `nova-agent` y API (`GET /v1/plugins` + tools en sesiones) exponen lo que carguen los plugins bajo el mismo flujo propone->decide->ejecuta->audita. Hooks de ciclo de vida (setup/teardown) y plugins reales (spotify/vscode/home-assistant/discord) se añaden cuando haya demanda concreta, sin cambiar el contrato base. Tests en `tests/test_plugins.py`.
+- **Estado:** aceptada.

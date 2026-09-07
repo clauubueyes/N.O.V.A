@@ -20,7 +20,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | ⏳ pasos 1-2 hechos |
 | — (web tools) | **PHASE 9 — Web Tools** | ✅ |
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | ✅ |
-| PHASE 12 Plugins | **PHASE 11 — Plugins** | pendiente |
+| PHASE 12 Plugins | **PHASE 11 — Plugins** | ✅ |
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | pendiente |
 
 ## PHASE 0 — Discovery ✅
@@ -162,11 +162,18 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 > Local-first (ADR-017): el audio jamás sale del dispositivo; STT y TTS corren en tu máquina con modelos
 > OSS. `[voice]` es un extra opcional (`pip install -e ".[dev,voice]"`).
 
-## PHASE 11 — Plugins
+## PHASE 11 — Plugins ✅
 
-- [ ] Cargador de plugins (`nova/plugins/`) con interfaz clara de registro de tools (ampliar `ToolRegistry`).
-- [ ] Plugins de ejemplo: spotify, vscode, home-assistant, discord (opcionales, bajo permisos).
-- [ ] Evitar overengineering: primero la interfaz, después los plugins concretos que se necesiten.
+- [x] **Interfaz `Plugin`** (`nova/plugins/base.py`): un plugin es una fábrica nombrada de `BaseTool` (sin dependencias pydantic extra). `PluginInfo` describe name/description/tools para CLI/API. Contrato: `tools() -> list[BaseTool]` y `close()` opcional.
+- [x] **Cargador** (`nova/plugins/loader.py` + `PluginSettings`): built-ins activados por nombre en `plugins.enabled` (lista en config) y **directorio externo opcional** `plugins.dir` escaneado buscando módulos `*_plugin.py` que expongan un objeto `PLUGIN`. Un plugin roto se registra en log y se omite **sin romper el arranque** (ADR-018). Las tools quedan en un `ToolRegistry` y pasan por el mismo `ToolRunner` + Permission System + audit (el plugin nunca bypasea seguridad).
+- [x] **Plugins de ejemplo local-first**: `text_tools` (base64 encode/decode, slugify, UUID) y `units` (conversión de longitud/peso/temperatura) — sin APIs externas ni dependencias.
+- [x] **Config**: sección `plugins:` en `config/config.yaml` (`enabled`, `dir`) + env `NOVA_PLUGINS_ENABLED`/`NOVA_PLUGINS_DIR`.
+- [x] **Integración**: CLI (`/plugins` lista los cargados y sus tools; `/tools` los incluye), `nova-agent` y API (`GET /v1/plugins` + sesiones) — siempre bajo el Permission System y audit.
+- [x] Tests dedicados (`tests/test_plugins.py`, 20): carga por defecto vacía, built-ins registran tools, nombre desconocido ignorado, información de tools por plugin, plugin externo desde dir, plugin roto/sin `PLUGIN` omitido, dir inexistente tolerado, comportamiento de cada tool (roundtrip base64, slug, uuid, conversiones, unidad desconocida), y **seguridad**: tools de plugins bajo permisos off (denegadas), auditadas y con validación de argumentos intacta. Total: **239** (219 previos + 20), 2 skips.
+- [ ] (Nota) Ampliar la interfaz con hooks de ciclo de vida (setup/teardown) y plugins concretos que se necesiten en producción (spotify/vscode/home-assistant...) cuando haya demanda real — ver ADR-018.
+
+> Los plugins amplían el catálogo de tools, NUNCA los permisos: una tool de plugin es una tool
+> más bajo el `PermissionSystem` + audit. Ver [decisions.md](decisions.md) ADR-018.
 
 ## PHASE 12 — Automatización avanzada
 

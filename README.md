@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 10 — Voice local** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, y **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
+Estado actual: **PHASE 11 — Plugins** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, y **plugins** que añaden tools bajo el mismo Permission System + audit). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -128,6 +128,28 @@ Cada petición pasa por: validación de URL (solo http(s), sin userinfo) -> `rob
 host -> caps de bytes/caracteres, con User-Agent identificable. La búsqueda usa `web.search_url`
 (DuckDuckGo sin API key por defecto; permite SearXNG/Brave). Detalle en [docs/tools.md](docs/tools.md).
 
+## Plugins (PHASE 11)
+
+Los plugins añaden **tools** (nunca permisos) bajo el mismo `PermissionSystem` + audit (ADR-018).
+**Off por defecto** (`plugins.enabled` vacío). Actívalos en `config/config.yaml`:
+
+```yaml
+plugins:
+  enabled:
+    - text_tools      # base64 encode/decode, slugify, UUID
+    - units           # conversión de longitud/peso/temperatura
+  dir: null           # o carpeta con módulos *_plugin.py que expongan un objeto PLUGIN
+```
+
+```text
+/plugins                                # lista plugins cargados y sus tools
+/run text_slugify {"text":"Hola Mundo!"}
+/run convert_temperature {"value":100,"from_unit":"c","to_unit":"f"}
+```
+
+Las tools de plugins se deniegan por defecto igual que cualquier otra: añádelas a `permissions.allow`
+o confímalas en `ask`. En la API: `GET /v1/plugins`. Detalle en [docs/tools.md](docs/tools.md).
+
 ## Voice (PHASE 10)
 
 Voz **100% local** (ADR-017): el audio jamás sale de tu dispositivo. STT con **Vosk** (modelo
@@ -165,6 +187,7 @@ nova/
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
     host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
     web/             Web tools controladas: web_search/web_fetch/web_extract (PHASE 9)
+  plugins/           Interfaz Plugin + cargador + built-ins text_tools/units (PHASE 11)
   voice/             Voice local: STT Vosk + TTS pyttsx3 + mic — 100% local (PHASE 10)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
@@ -197,7 +220,7 @@ Arquitectura actual:
 | [docs/development.md](docs/development.md) | Guía de desarrollo |
 | [docs/decisions.md](docs/decisions.md) | Decisiones arquitectónicas (ADR) |
 | [docs/security.md](docs/security.md) | Modelo de seguridad y permisos |
-| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web) |
+| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web, plugins) |
 | [docs/models.md](docs/models.md) | Modelos y política de selección |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Problemas comunes |
 | [docs/api.md](docs/api.md) | APIs internas y externas |

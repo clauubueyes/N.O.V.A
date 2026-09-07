@@ -152,3 +152,14 @@ voice:
   # (comparación por defecto case-insensitive sobre el transcript). p.ej. "nova".
   wake_word: null
   # device: null             # índice o nombre del dispositivo de entrada (sounddevice)
+
+plugins:
+  # PHASE 11 — Plugins. OFF by default: with an empty list nothing is loaded.
+  # Built-in plugins enabled by name (each adds tools under the same Permission
+  # System + audit). Available built-ins: text_tools, units.
+  enabled: []
+    # - text_tools
+    # - units
+  # Optional: scan a folder for custom `*_plugin.py` modules that expose a
+  # `PLUGIN` object (a nova.plugins.Plugin instance). Empty = no dir scan.
+  dir: null

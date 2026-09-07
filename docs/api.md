@@ -278,7 +278,7 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 |---|---|
 | `GET /healthz` | Salud: `provider`, `status`, `version`. |
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
-| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`; web tools solo con `web.enabled`). |
+| `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`; web tools solo con `web.enabled`; tools de plugins solo si hay plugins cargados). |
 | `POST /v1/route` | PHASE 7 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "role", "model", "reason"}`. |
 | `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
 | `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |
@@ -290,6 +290,7 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 | `GET /v1/sessions/{id}/memory?q=` | Sin `q`: memorias recientes; con `q`: búsqueda con contexto. |
 | `GET /v1/agents` | Presets de agentes disponibles (`name`, `description`). |
 | `POST /v1/agents/{name}/chat` | Turno con el agente persistente por nombre: `{"message", "model"}` -> `{"agent", "reply", "model", "steps"}`. |
+| `GET /v1/plugins` | PHASE 11 — plugins cargados: `{"plugins": [{"name", "description", "tools"}], "loaded": [...]}`. |
 
 Notas:
 
