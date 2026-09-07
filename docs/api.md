@@ -291,6 +291,9 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 | `GET /v1/agents` | Presets de agentes disponibles (`name`, `description`). |
 | `POST /v1/agents/{name}/chat` | Turno con el agente persistente por nombre: `{"message", "model"}` -> `{"agent", "reply", "model", "steps"}`. |
 | `GET /v1/plugins` | PHASE 11 — plugins cargados: `{"plugins": [{"name", "description", "tools"}], "loaded": [...]}`. |
+| `GET /v1/automation` | PHASE 12 — estado de la automatización: `{"enabled", "poll_s", "scheduler", "workflows"}`. |
+| `POST /v1/automation/workflows/{name}/run` | PHASE 12 — ejecuta un workflow configurado -> `{"workflow", "ok", "steps"}` (404 si no existe). |
+| `POST /v1/automation/tasks/{name}/run` | PHASE 12 — ejecuta la acción de una tarea programada -> `TaskRunResult` (404 si no existe). |
 
 Notas:
 
@@ -299,4 +302,5 @@ Notas:
 - Si la sesión se creó con `agent`, `/chat` usa `Agent.act` y devuelve `steps` (una entrada por tool-call: nombre, args, ok, mensaje, datos) además de la respuesta.
 - Los agentes estatelés persisten por nombre en el `AppState` (`nova.api.app`): mantienen sesión, memoria propia y historial entre llamadas.
 - La API nunca pregunta interactivamente: un permiso `ASK` se resuelve denegado (`result.ok == false`). Las reglas `allow` siguen ejecutando directo (p. ej. `calculate`).
+- PHASE 12: el scheduler corre en un hilo solo si `automation.enabled` (se arranca en el lifespan y se detiene al apagar); `GET /v1/automation` lista el estado del scheduler y los workflows configurados. Los endpoints de ejecución funcionan aunque `enabled` esté a `false` (solo requiere el lifespan, que siempre construye el `AutomationExecutor`).
 - Errores del proveedor -> `502`; sesión/agente inexistente -> `404`.

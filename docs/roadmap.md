@@ -21,7 +21,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | — (web tools) | **PHASE 9 — Web Tools** | ✅ |
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | ✅ |
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | ✅ |
-| PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | pendiente |
+| PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | ✅ |
 
 ## PHASE 0 — Discovery ✅
 
@@ -175,11 +175,30 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 > Los plugins amplían el catálogo de tools, NUNCA los permisos: una tool de plugin es una tool
 > más bajo el `PermissionSystem` + audit. Ver [decisions.md](decisions.md) ADR-018.
 
-## PHASE 12 — Automatización avanzada
+## PHASE 12 — Automatización avanzada ✅
 
-- [ ] Tareas/automatizaciones programadas (scheduler sencillo sobre el Core).
-- [ ] Eventos y workflows multi-paso con el Permission System como capa de decisión.
-- [ ] Prioridad: funcionalidad -> estabilidad -> tests -> docs -> escalabilidad.
+- [x] **Scheduler de tareas programadas** (`nova/automation/scheduler.py`): cada tarea con `interval_s`
+  (cada N segundos) o `at "HH:MM"` (una vez al día, local; `interval_s` gana si ambos). `Scheduler`
+  decide *cuándo* corre (clock inyectable, `due`/`run_due`/`status`) y funciona en hilo daemon de
+  polling (`poll_s`) vía `start`/`stop`; un task que lanza es capturado sin romper el loop.
+- [x] **Workflows multi-paso** (`nova/automation/workflow.py`): `WorkflowEngine` ejecuta pasos en orden:
+  `tool` (vía `ToolRunner`), `agent` (turno completo de un agente preseteado) o `workflow` anidado
+  (guarda de profundidad). Política `on_error: stop` (defecto) / `continue` por paso. Resultado
+  estructurado `WorkflowResult`/`StepResult`.
+- [x] **Permission System como capa de decisión**: la automatización usa un `ToolRunner` dedicado
+  **sin confirmación interactiva** (un `ask` se deniega de forma segura); cada tool sigue bajo
+  `permissions.allow`/`deny` y audit. (ADR-019)
+- [x] **Config**: sección `automation:` en `config/config.yaml` (`enabled`, `poll_s`, `tasks`,
+  `workflows`) + `AutomationSettings` y env `NOVA_AUTOMATION_ENABLED`/`NOVA_AUTOMATION_POLL_S`.
+- [x] **Integración**: CLI (`/automation`, `/workflows`, `/workflow <name>`; scheduler en segundo plano
+  si `enabled`), `nova-agent` (igual + fix del `run_llm` inexistente) y API
+  (`GET /v1/automation`, `POST /v1/automation/tasks|workflows/{name}/run`; scheduler en lifespan).
+- [x] Tests dedicados (`tests/test_automation.py`, 31). Total: **270** (239 previos + 31), 2 skips.
+- [ ] (Fuera de alcance acordado) Compaction/resumen semántico de conversaciones largas: candidata a
+  PHASE 13 o fase propia. Prioridad de esta fase: funcionalidad -> estabilidad -> tests -> docs.
+
+> La automatización amplía el horario de ejecución de N.O.V.A., NO sus permisos: un task/workflow
+> solo corre lo que `permissions.allow` permite (con `ask` denegado en modo desatendido). Ver ADR-019.
 
 ---
 

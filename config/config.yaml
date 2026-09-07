@@ -163,3 +163,37 @@ plugins:
   # Optional: scan a folder for custom `*_plugin.py` modules that expose a
   # `PLUGIN` object (a nova.plugins.Plugin instance). Empty = no dir scan.
   dir: null
+
+automation:
+  # PHASE 12 — Scheduler + workflows. OFF by default. When enabled, the scheduler
+  # runs in a background thread (CLI, nova-agent, API) and fires tasks on their
+  # schedule. Tools called by a task/workflow follow `permissions`: with
+  # autonomy=ask an unattended `ask` is DENIED (no human to confirm), so add the
+  # tools you want automated to `permissions.allow`.
+  enabled: false
+  poll_s: 1.0
+  tasks: []
+    # - name: daily_summary
+    #   description: "Daily reminder"
+    #   schedule:
+    #     # Either interval_s (every N seconds) or at ("HH:MM" local time).
+    #     interval_s: 0
+    #     at: "09:00"
+    #   # Action: a tool call, an agent turn, or (mutually exclusive) a workflow.
+    #   # tool: date_time
+    #   # args: {}
+    #   # agent: general
+    #   # text: "What is the date today?"
+    #   # workflow: my_workflow
+  workflows: []
+    # - name: my_workflow
+    #   description: "Example multi-step workflow"
+    #   steps:
+    #     - tool: date_time
+    #       args: {}
+    #     - agent: general
+    #       text: "Summarize the current time and date."
+    # on_error: stop (default) or continue, per step:
+    #     - tool: date_time
+    #       args: {}
+    #       on_error: continue

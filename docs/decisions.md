@@ -172,3 +172,15 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   4. **Off por defecto**: `plugins.enabled` vacío + `dir` nulo = nada se carga. Los plugins de ejemplo (`text_tools`, `units`) son puros y sin APIs externas (local-first, ADR-013).
 - **Consecuencias:** CLI (`/plugins`), `nova-agent` y API (`GET /v1/plugins` + tools en sesiones) exponen lo que carguen los plugins bajo el mismo flujo propone->decide->ejecuta->audita. Hooks de ciclo de vida (setup/teardown) y plugins reales (spotify/vscode/home-assistant/discord) se añaden cuando haya demanda concreta, sin cambiar el contrato base. Tests en `tests/test_plugins.py`.
 - **Estado:** aceptada.
+
+## ADR-019 — Automatización: el scheduler amplía el horario, nunca los permisos
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 12 añade tareas programadas (scheduler) y workflows multi-paso. Un task desatendido ejecuta sin que nadie esté delante para confirmar `ask`; podrías caer en (a) correr con `autonomy: full` en nombre de la automatización (pierde la capa de decisión de ADR-007) o (b) bloquear esperando una confirmación interactiva que nunca llega (rompe la automatización).
+- **Decisión:**
+  1. **El `Scheduler` decide cuándo, el `ToolRunner` decide qué**: el scheduler solo elige el momento (`interval_s`/`at`) y llama a un executor; toda ejecución pasa por el mismo `ToolRunner` + `PermissionSystem` + audit que el chat manual (ADR-002).
+  2. **Runner desatendido, sin confirmación**: la automatización usa un `ToolRunner` dedicado con `confirm` denegadora — un `ask` en modo desatendido se deniega de forma segura. Para automatizar una tool hay que listarla en `permissions.allow` (o tener `autonomy: full`).
+  3. **Workflows multi-paso con `on_error`**: pasos `tool`/`agent`/`workflow` anidado en orden; por defecto `stop` en el primer fallo, `continue` para seguir. Guarda de profundidad contra ciclos.
+  4. **Siempre auditado y observable**: cada tool de un task/workflow queda en el audit log; el estado del scheduler es consultable (`/automation`, `GET /v1/automation`).
+- **Consecuencias:** CLI (`/automation`, `/workflows`, `/workflow <name>`, scheduler en segundo plano si `automation.enabled`), `nova-agent` (igual + fix del `run_llm` inexistente) y API (`GET /v1/automation`, `POST /v1/automation/tasks|workflows/{name}/run`). Off por defecto. La compaction/resumen de memoria queda fuera de alcance (fase futura). Tests en `tests/test_automation.py`.
+- **Estado:** aceptada.

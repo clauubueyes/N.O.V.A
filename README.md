@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 11 — Plugins** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, y **plugins** que añaden tools bajo el mismo Permission System + audit). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
+Estado actual: **PHASE 12 — Automatización** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, **plugins** que añaden tools bajo el mismo Permission System + audit, y **automatización** con scheduler de tareas programadas + workflows multi-paso bajo los mismos permisos). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -150,6 +150,42 @@ plugins:
 Las tools de plugins se deniegan por defecto igual que cualquier otra: añádelas a `permissions.allow`
 o confímalas en `ask`. En la API: `GET /v1/plugins`. Detalle en [docs/tools.md](docs/tools.md).
 
+## Automatización (PHASE 12)
+
+Tareas programadas (scheduler) y workflows multi-paso que corren bajo los **mismos** permisos que el
+chat: la automatización amplía el *horario*, nunca los permisos (ADR-019). **Off por defecto**
+(`automation.enabled: false`).
+
+```yaml
+automation:
+  enabled: true
+  poll_s: 1.0
+  tasks:
+    - name: heartbeat
+      schedule: {interval_s: 60}   # o at: "09:00" (una vez al día)
+      tool: date_time              # tool | agent(+text) | workflow
+  workflows:
+    - name: my_workflow
+      steps:
+        - tool: calculate
+          args: {expression: "2+2"}
+        - agent: general
+          text: "Resume el resultado."
+          on_error: continue       # stop (defecto) o continue por paso
+```
+
+En modo desatendido un permiso `ask` se **deniega** de forma segura: añade a `permissions.allow` las
+tools que vayan a ejecutar tus tareas/workflows.
+
+```text
+/automation           # estado del scheduler + próximas ejecuciones
+/workflows            # lista los workflows configurados
+/workflow my_workflow # ejecuta un workflow a mano
+```
+
+En la API: `GET /v1/automation`, `POST /v1/automation/workflows/{name}/run`,
+`POST /v1/automation/tasks/{name}/run`. Detalle en [docs/tools.md](docs/tools.md).
+
 ## Voice (PHASE 10)
 
 Voz **100% local** (ADR-017): el audio jamás sale de tu dispositivo. STT con **Vosk** (modelo
@@ -188,6 +224,7 @@ nova/
     host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
     web/             Web tools controladas: web_search/web_fetch/web_extract (PHASE 9)
   plugins/           Interfaz Plugin + cargador + built-ins text_tools/units (PHASE 11)
+  automation/        Scheduler de tareas + workflows multi-paso bajo los mismos permisos (PHASE 12)
   voice/             Voice local: STT Vosk + TTS pyttsx3 + mic — 100% local (PHASE 10)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
@@ -220,7 +257,7 @@ Arquitectura actual:
 | [docs/development.md](docs/development.md) | Guía de desarrollo |
 | [docs/decisions.md](docs/decisions.md) | Decisiones arquitectónicas (ADR) |
 | [docs/security.md](docs/security.md) | Modelo de seguridad y permisos |
-| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web, plugins) |
+| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web, plugins, automatización) |
 | [docs/models.md](docs/models.md) | Modelos y política de selección |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Problemas comunes |
 | [docs/api.md](docs/api.md) | APIs internas y externas |

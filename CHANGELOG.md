@@ -2,6 +2,21 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.12.0] - 2026-09-07
+
+### Añadido — PHASE 12: Automatización (scheduler + workflows)
+
+- **Scheduler** (`nova/automation/scheduler.py`): heartbeat ligero que decide *cuándo* corre cada tarea. Cada tarea tiene `interval_s` (cada N segundos) o `at "HH:MM"` (una vez al día; `interval_s` gana si ambos). `Scheduler.due`/`run_due`/`status` con clock inyectable para tests; `start`/`stop` lanzan un hilo daemon de polling (`poll_s`), los errores de un task se capturan sin romper el loop.
+- **Workflows** (`nova/automation/workflow.py`): `WorkflowEngine` ejecuta pasos **en orden**: `tool` (vía `ToolRunner`), `agent` (turno completo de un agente preseteado vía factory), o `workflow` anidado (con guarda de ciclo/profundidad `max_depth`). `on_error: stop` (defecto) aborta el workflow en el primer fallo; `continue` sigue. Resultado estructurado `WorkflowResult`/`StepResult` con `to_dict`.
+- **Executor** (`nova/automation/executor.py`): `AutomationExecutor` normaliza la ejecución de una tarea (tool/agent/workflow) a `TaskRunResult`, englobando excepciones.
+- **Seguridad**: automatización usa un `ToolRunner` dedicado **sin confirmación interactiva** (un `ASK` se deniega de forma segura); cada tool sigue pasando por `PermissionSystem` + audit. Documentado como ADR-019.
+- **Config**: `AutomationSettings` (+ `AutomationTaskSettings`/`AutomationWorkflowSettings`/`AutomationStepSettings`) en `nova/core/config.py`; sección `automation:` en `config/config.yaml` (enabled, poll_s, tasks, workflows) y env `NOVA_AUTOMATION_ENABLED`/`NOVA_AUTOMATION_POLL_S`.
+- **Integración CLI**: el scheduler arranca en segundo plano si `automation.enabled`; comandos `/automation` (estado del scheduler), `/workflows` (lista), `/workflow <name>` (ejecuta). Banner/`/help` a PHASE 12.
+- **`nova-agent`**: mismo wiring de automatización + comandos `/automation`/`/workflows`/`/workflow <name>`. **Fix**: eliminada la llamada a `runner.run_llm` inexistente (bug latente que rompía el chat del agente); ahora usa `chat_line` (misma ruta router+memoria+audit que el CLI).
+- **API**: `GET /v1/automation` (estado + workflows), `POST /v1/automation/workflows/{name}/run` y `POST /v1/automation/tasks/{name}/run`; el scheduler se arranca en el lifespan si `automation.enabled` y se detiene al apagar.
+- **Tests**: `tests/test_automation.py` con 31 tests (matemática de horarios, due/reschedule/background, fallo del executor capturado, workflows de tools en orden, deny detiene por defecto, continue sigue, pasos agent, workflows anidados y "too deep", ejecutor por tool/workflow/crash, config yaml/env, audit de executión, endpoints API). Total: **270** (239 previos + 31), 2 skips.
+- **Docs**: `docs/roadmap.md` (PHASE 12 ✅), `docs/decisions.md` (ADR-019), `docs/architecture.md`, `docs/api.md`, `docs/tools.md`, `docs/setup.md`, `README.md`. Versión: **0.12.0**.
+
 ## [0.11.0] - 2026-09-07
 
 ### Añadido — PHASE 11: Plugins (interfaz + cargador + ejemplos local-first)

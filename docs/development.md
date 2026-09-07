@@ -28,6 +28,7 @@ nova/
   memory/    store.py (SQLite), retriever.py, service.py, tools.py
   tools/     base.py, standard.py, registry.py, permissions.py, runner.py
   plugins/   base.py (interfaz Plugin), loader.py, builtin/{text_tools,units}.py (PHASE 11)
+  automation/ scheduler.py, workflow.py, executor.py (PHASE 12)
   voice/     base.py (contratos + wake word), vosk.py, tts.py, audiosource.py, pipeline.py (PHASE 10)
   agents/    core.py (Agent + JSON tool-call), presets.py (5 presets + create_agent)
   api/       app.py (FastAPI), server.py (uveicorn), schemas.py, static/index.html

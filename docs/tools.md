@@ -151,3 +151,44 @@ plugins:
 
 Env: `NOVA_PLUGINS_ENABLED=text_tools,units`, `NOVA_PLUGINS_DIR=path`. Un plugin roto se loguea y se
 omite sin romper el arranque.
+
+## Automatización (`nova/automation/`) — PHASE 12
+
+**Off por defecto** (`automation.enabled: false`). La automatización no crea tools nuevas: programa
+la ejecución de las tools/agentes existentes bajo el mismo `PermissionSystem` + audit (ADR-019).
+
+### Scheduler
+
+Cada tarea tiene un horario y una acción:
+
+```yaml
+automation:
+  enabled: true
+  poll_s: 1.0
+  tasks:
+    - name: heartbeat
+      description: "Latido de prueba"
+      schedule:
+        interval_s: 60          # cada 60 s (o at: "09:00" para una vez al día; interval_s gana)
+      tool: date_time            # acción: una tool...
+      args: {}
+      # agent: general          # ...un turno de agente (+ text)
+      # workflow: my_workflow   # ...o un workflow configurado (mutuamente exclusivo)
+  workflows:
+    - name: my_workflow
+      description: "Workflow de ejemplo"
+      steps:
+        - tool: calculate
+          args: {expression: "2+2"}
+        - agent: general
+          text: "Resume el resultado."
+          on_error: continue    # stop (defecto) o continue por paso
+```
+
+En modo desatendido un permiso `ask` se **deniega** (no hay humano que confirmar): las tools que un
+task/workflow vaya a ejecutar deben estar en `permissions.allow` (o tener `autonomy: full`). Cada tool
+queda auditada como cualquier otra.
+
+- CLI: `/automation` (estado + próxima ejecución), `/workflows` (lista), `/workflow <name>` (ejecuta).
+- API: `GET /v1/automation`, `POST /v1/automation/workflows/{name}/run`, `POST /v1/automation/tasks/{name}/run`.
+- Env: `NOVA_AUTOMATION_ENABLED`, `NOVA_AUTOMATION_POLL_S`.

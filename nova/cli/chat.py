@@ -4,6 +4,7 @@ import json
 import sys
 
 from nova.agents import Agent, agent_presets, create_agent
+from nova.automation import AutomationExecutor, Scheduler
 from nova.core.audit import AuditLog
 from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
@@ -30,6 +31,7 @@ BANNER = """\
 | Phase 9 - Web Tools (web_search / web_fetch / web_extract)    |
 | Phase 10 - Voice (STT/Vosk + TTS/pyttsx3, local)              |
 | Phase 11 - Plugins (text_tools / units, PHASE 11)             |
+| Phase 12 - Automation (scheduler + workflows, PHASE 12)       |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -59,6 +61,9 @@ Commands:
   /memory [query]   search memories or list the most recent ones
   /agents           list available agents
   /agent <name> <text> run a text through an agent (tools proposed by the LLM)
+  /workflow <name>  run a configured automation workflow (PHASE 12)
+  /workflows        list configured automation workflows (PHASE 12)
+  /automation       scheduler status + scheduled tasks (PHASE 12)
   /help             show this help"""
 
 
@@ -83,6 +88,18 @@ def _format_agent_result(result) -> str:
         detail = step.message or ("done" if step.ok else "failure")
         lines.append(f"  [step {status}] {step.tool}({json.dumps(step.args, ensure_ascii=False)}) -> {detail}")
     lines.append(f"{result.answer}")
+    return "\n".join(lines)
+
+
+def _format_workflow_result(result) -> str:
+    if result is None:
+        return "[workflow error] unknown workflow"
+    lines = []
+    for step in result.steps:
+        status = "ok" if step.ok else "error"
+        detail = step.message or ("done" if step.ok else "failure")
+        lines.append(f"  [step {status}] {step.kind} {step.name} -> {detail}")
+    lines.append(f"[workflow {result.workflow}] {'ok' if result.ok else 'failed'}: {result.message}")
     return "\n".join(lines)
 
 
@@ -142,6 +159,50 @@ def main() -> int:
         return agent
 
     voice = build_voice(settings.voice)
+
+    # PHASE 12 — Automation. Dedicated runner WITHOUT interactive confirm: a
+    # scheduled task has no human to ask, so autonomy=ask tools are DENIED
+    # (add them to permissions.allow to automate them). Everything still goes
+    # through the Permission System + audit.
+    automation_runner = ToolRunner(
+        registry=tools_registry,
+        permissions=PermissionSystem(settings.permissions),
+        audit=AuditLog(settings.audit.file),
+    )
+    automation_workflows = {wf.name: wf for wf in settings.automation.workflows}
+    automation_agents: dict[str, Agent] = {}
+
+    def get_automation_agent(name: str, model: str | None = None) -> Agent | None:
+        preset_names = {preset.name for preset in agent_presets()}
+        if name not in preset_names:
+            return None
+        agent = automation_agents.get(name)
+        if agent is None:
+            agent = create_agent(
+                name,
+                provider=provider,
+                runner=automation_runner,
+                memory=memory,
+                model=model or current_model,
+            )
+            automation_agents[name] = agent
+        return agent
+
+    automation_executor = AutomationExecutor(
+        automation_runner,
+        get_agent=get_automation_agent,
+        workflows=automation_workflows,
+    )
+    scheduler = Scheduler(
+        settings.automation.tasks,
+        poll_s=settings.automation.poll_s,
+    )
+    if settings.automation.enabled:
+        scheduler.start(automation_executor.run_task)
+        logger.info(
+            "automation enabled: scheduler running with %d task(s)",
+            len(scheduler.task_names),
+        )
 
     def chat_line(text: str) -> str | None:
         """Run one user utterance through the chat state and return the
@@ -237,6 +298,33 @@ def main() -> int:
                         print(f"  - {info.name:<14} {info.description}")
                         for tool_name in info.tools:
                             print(f"       {tool_name}")
+                elif command == "automation":
+                    if not settings.automation.enabled:
+                        print("[automation disabled] enable it in config/config.yaml -> automation.")
+                        continue
+                    print(f"Scheduler: running={scheduler.running} (poll {settings.automation.poll_s}s)")
+                    if not settings.automation.tasks:
+                        print("  no scheduled tasks configured")
+                    for row in scheduler.status():
+                        print(
+                            f"  - {row['task']:<20} next={row['next_run']} "
+                            f"(in {row['seconds_until']:.0f}s, last ok={row['last_ok']})"
+                        )
+                elif command == "workflows":
+                    if not automation_workflows:
+                        print("[no workflows configured] add them in config/config.yaml -> automation.")
+                        continue
+                    for wf_name, wf in automation_workflows.items():
+                        print(f"  - {wf_name:<20} {wf.description or wf.name} ({len(wf.steps)} steps)")
+                elif command == "workflow":
+                    if len(parts) < 2:
+                        print("Usage: /workflow <name>")
+                        continue
+                    if parts[1] not in automation_workflows:
+                        print(f"Unknown workflow '{parts[1]}'. See /workflows.")
+                        continue
+                    logger.info("workflow %s started", parts[1])
+                    print(_format_workflow_result(automation_executor.run_workflow(parts[1])))
                 elif command == "remember":
                     text = " ".join(parts[1:]).strip()
                     if not text:
@@ -358,6 +446,7 @@ def main() -> int:
 
             chat_line(line)
     finally:
+        scheduler.stop()
         provider.close()
         memory.close()
         if voice is not None:

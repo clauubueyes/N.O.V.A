@@ -183,6 +183,79 @@ class PluginSettings(BaseSettings):
         return value
 
 
+class AutomationScheduleSettings(BaseModel):
+    """PHASE 12 — when an automation task runs.
+
+    Either `interval_s` (every N seconds) or `at` (a local time "HH:MM" once a
+    day). `interval_s` wins when both are set. An empty schedule never fires.
+    """
+
+    interval_s: float = 0.0
+    at: str = ""
+
+
+class AutomationTaskSettings(BaseModel):
+    """PHASE 12 — a scheduled task: a moment in time plus a single action.
+
+    The action is either a `tool` (+`args`), an `agent` (+`text` prompt) or a
+    `workflow` by name. Executed by the Scheduler through the same ToolRunner /
+    Permission System / audit as every other capability.
+    """
+
+    name: str
+    description: str = ""
+    enabled: bool = True
+    schedule: AutomationScheduleSettings = AutomationScheduleSettings()
+    tool: str | None = None
+    args: dict[str, Any] = Field(default_factory=dict)
+    agent: str | None = None
+    text: str = ""
+    workflow: str | None = None
+
+
+class AutomationStepSettings(BaseModel):
+    """PHASE 12 — one step of a workflow: a tool call, an agent turn or a run.
+
+    `on_error` is "stop" (default) or "continue" when the step fails/denied.
+    """
+
+    tool: str | None = None
+    args: dict[str, Any] = Field(default_factory=dict)
+    agent: str | None = None
+    text: str = ""
+    workflow: str | None = None
+    on_error: str = "stop"
+
+
+class AutomationWorkflowSettings(BaseModel):
+    """PHASE 12 — a named, ordered multi-step workflow.
+
+    Every tool call inside goes through the Permission System (denied by default
+    in automation) and every step is audited; a failed step stops the workflow by
+    default (`on_error: stop` per step) or continues if `continue`.
+    """
+
+    name: str
+    description: str = ""
+    enabled: bool = True
+    steps: list[AutomationStepSettings] = Field(default_factory=list)
+
+
+class AutomationSettings(BaseSettings):
+    """PHASE 12 — scheduler + workflows.
+
+    `enabled: false` (default) turns everything off. When enabled, `tasks` run on
+    their schedule and `workflows` can be triggered manually (CLI/API) or from a
+    scheduled task. Automation tools follow `permissions` (an `ask` is denied in
+    automation: there is no human in the loop).
+    """
+
+    enabled: bool = False
+    poll_s: float = 1.0
+    tasks: list[AutomationTaskSettings] = Field(default_factory=list)
+    workflows: list[AutomationWorkflowSettings] = Field(default_factory=list)
+
+
 class VoiceSettings(BaseSettings):
     """PHASE 10 — local voice pipeline (STT -> chat -> TTS).
 
@@ -216,6 +289,7 @@ class NovaSettings(BaseSettings):
     web: WebSettings = WebSettings()
     voice: VoiceSettings = VoiceSettings()
     plugins: PluginSettings = PluginSettings()
+    automation: AutomationSettings = AutomationSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -288,6 +362,10 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "plugins": {
         "enabled": "enabled",
         "dir": "dir",
+    },
+    "automation": {
+        "enabled": "enabled",
+        "poll_s": "poll_s",
     },
 }
 

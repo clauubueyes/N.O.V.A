@@ -283,6 +283,32 @@ config.yaml -> plugins.enabled (nombres builtin) + plugins.dir (módulos *_plugi
 - Exposición: CLI `/plugins`, `nova-agent` (carga en su registry) y API `GET /v1/plugins` +
   tools de plugins visibles en `GET /v1/tools` y en las sesiones. Detalle en [tools.md](tools.md).
 
+## Automatización (PHASE 12) — ADR-019
+
+La automatización amplía el **horario** de ejecución de N.O.V.A., nunca sus permisos:
+
+```
+config.yaml -> automation (enabled, poll_s, tasks, workflows)
+   --> Scheduler (nova/automation/scheduler.py): decide CUÁNDO (interval_s | at "HH:MM")
+   --> AutomationExecutor (nova/automation/executor.py): decide QUÉ (tool | agent | workflow)
+   --> WorkflowEngine (nova/automation/workflow.py): pasos en orden, on_error stop|continue
+   --> ToolRunner desatendido (confirm denegada) -> mismo PermissionSystem + audit
+```
+
+- **`Scheduler`**: tareas con `interval_s` (cada N segundos) o `at "HH:MM"` (una vez al día, local;
+  `interval_s` gana si ambos). Clock inyectable (tests), `due`/`run_due`/`status` y un hilo daemon de
+  polling (`poll_s`) vía `start`/`stop`. Un task que lanza se captura sin romper el loop.
+- **`WorkflowEngine`**: pasos `tool` (vía `ToolRunner`), `agent` (turno completo de un agente
+  preseteado) o `workflow` anidado (con guarda de profundidad). `on_error: stop` (defecto) aborta en
+  el primer fallo; `continue` sigue. `WorkflowResult`/`StepResult` con `to_dict`.
+- **Desatendido y bajo los mismos permisos**: el executor usa un `ToolRunner` dedicado sin
+  confirmación interactiva — un `ask` en un task/workflow se deniega de forma segura (solo corre lo
+  listado en `permissions.allow` o con `autonomy: full`). Cada tool queda auditada.
+- **Off por defecto** (`automation.enabled: false`). Exposición: CLI `/automation`, `/workflows`,
+  `/workflow <name>` (scheduler en segundo plano si `enabled`), `nova-agent` (igual, + fix del
+  `run_llm` inexistente) y API `GET /v1/automation`,
+  `POST /v1/automation/tasks|workflows/{name}/run` (scheduler en lifespan).
+
 ## Arquitectura objetivo (evolución incremental)
 
 La visión de producto mapea sobre esta estructura sin saltos de arquitectura:
@@ -320,7 +346,8 @@ del host.
 
 ## Caminos futuros (incremental)
 
-- **PHASE 10-12** — Voice, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
+- **PHASE 13+** — Compaction/resumen semántico de conversaciones largas, computación por voz remota y
+  más plugins concretos. Detalle en [roadmap.md](roadmap.md).
 
 ## Restricciones de diseño
 

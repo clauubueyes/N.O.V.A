@@ -96,9 +96,24 @@ API REST + interfaz web (PHASE 4):
 
 Abre `http://127.0.0.1:8000/` (chat web) o `http://127.0.0.1:8000/docs` (OpenAPI). Host/puerto en `config/config.yaml` -> `api` o con `NOVA_API_HOST` / `NOVA_API_PORT`.
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/plugins`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/plugins`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/automation`, `/workflows`, `/workflow <nombre>`, `/help`.
 
-### Plugins (PHASE 11)
+### Automatización (PHASE 12)
+
+**Off por defecto**. Para que el scheduler corra en segundo plano y definir tareas/workflows, edita
+`config/config.yaml`:
+
+```yaml
+automation:
+  enabled: true          # el scheduler arranca en CLI, nova-agent y API
+  poll_s: 1.0            # frecuencia de comprobación del scheduler
+  tasks: []              # tareas con schedule (interval_s o at "HH:MM") + tool/agent/workflow
+  workflows: []          # workflows multi-paso (tool/agent anidados, on_error stop|continue)
+```
+
+En modo desatendido un permiso `ask` se **deniega** (no hay humano que confirmar): añade a
+`permissions.allow` las tools que vayan a ejecutar tus tareas/workflows. Ver el estado con
+`/automation` (CLI) o `GET /v1/automation` (API); ejecuta un workflow a mano con `/workflow <nombre>`.
 
 Carga **off por defecto**. Para activar los built-in o un directorio propio, edita `config/config.yaml`:
 

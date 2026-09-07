@@ -28,6 +28,7 @@ from nova.api.schemas import (
     SessionRunRequest,
     ToolInfoOut,
 )
+from nova.automation import AutomationExecutor, Scheduler
 from nova.core.audit import AuditLog
 from nova.core.config import NovaSettings, load_settings
 from nova.core.logging import get_logger
@@ -73,6 +74,10 @@ class AppState:
     permissions: PermissionSystem
     sessions: dict[str, SessionEntry] = field(default_factory=dict)
     agents: dict[str, SessionEntry] = field(default_factory=dict)
+    automation_agents: dict[str, SessionEntry] = field(default_factory=dict)
+    scheduler: Scheduler | None = None
+    executor: AutomationExecutor | None = None
+    automation_memory: MemoryService | None = None
 
 
 def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
@@ -134,13 +139,68 @@ def create_app(
     )
     state.router: ModelRouter = build_router(settings.llm, settings.model_router)
 
+    automation_workflows = {wf.name: wf for wf in settings.automation.workflows}
+
+    def get_automation_agent(name: str, model: str | None = None) -> Agent | None:
+        preset_names = {preset.name for preset in agent_presets()}
+        if name not in preset_names:
+            return None
+        entry = state.automation_agents.get(name)
+        if entry is None:
+            entry = build_session(f"auto-{name}", agent_name=name)
+            state.automation_agents[name] = entry
+        return entry.agent
+
+    def _automation_runner() -> ToolRunner:
+        automation_memory = MemoryService(
+            MemoryStore(settings.memory.db_file),
+            embed=provider.embed_text if provider.supports_embedding else None,
+            session_id="automation",
+            max_context=settings.memory.max_context,
+            similarity_threshold=settings.memory.similarity_threshold,
+        )
+        state.automation_memory = automation_memory
+        registry = create_registry(
+            [RememberTool(automation_memory), MemorySearchTool(automation_memory)]
+            + (all_host_tools(settings.host) if settings.api.host_enabled else [])
+            + all_web_tools(settings.web),
+            base=base_tools_registry,
+        )
+        load_plugin_tools(settings.plugins, registry=registry)
+        return ToolRunner(
+            registry=registry,
+            permissions=state.permissions,
+            audit=state.audit,
+            confirm=lambda _question: False,  # automation never asks interactively
+        )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        automation_runner = _automation_runner()
+        executor = AutomationExecutor(
+            automation_runner,
+            get_agent=get_automation_agent,
+            workflows=automation_workflows,
+        )
+        state.executor = executor
+        if settings.automation.enabled:
+            state.scheduler = Scheduler(settings.automation.tasks, poll_s=settings.automation.poll_s)
+            state.scheduler.start(executor.run_task)
+            logger.info(
+                "automation enabled: scheduler running with %d task(s)",
+                len(state.scheduler.task_names),
+            )
         yield
+        if state.scheduler is not None:
+            state.scheduler.stop()
+        if state.automation_memory is not None:
+            state.automation_memory.close()
         provider.close()
         for entry in state.sessions.values():
             entry.close()
         for entry in state.agents.values():
+            entry.close()
+        for entry in state.automation_agents.values():
             entry.close()
 
     app = FastAPI(
@@ -246,6 +306,43 @@ def create_app(
             "plugins": [info.to_dict() for info in infos],
             "loaded": [info.name for info in infos],
         }
+
+    @app.get("/v1/automation")
+    def automation_status() -> dict[str, Any]:
+        executor = state.executor
+        if executor is None:
+            return {"enabled": False, "scheduler": None, "tasks": [], "workflows": []}
+        workflows = [
+            {"name": wf.name, "description": wf.description, "steps": len(wf.steps)}
+            for wf in settings.automation.workflows
+        ]
+        scheduler_rows = state.scheduler.status() if state.scheduler is not None else []
+        return {
+            "enabled": settings.automation.enabled,
+            "poll_s": settings.automation.poll_s,
+            "scheduler": scheduler_rows,
+            "workflows": workflows,
+        }
+
+    @app.post("/v1/automation/workflows/{name}/run")
+    def automation_run_workflow(name: str) -> dict[str, Any]:
+        executor = state.executor
+        if executor is None:
+            raise HTTPException(status_code=503, detail="automation not started (lifespan)")
+        result = executor.run_workflow(name)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"unknown workflow {name!r}")
+        return result.to_dict()
+
+    @app.post("/v1/automation/tasks/{name}/run")
+    def automation_run_task(name: str) -> dict[str, Any]:
+        executor = state.executor
+        if executor is None:
+            raise HTTPException(status_code=503, detail="automation not started (lifespan)")
+        task = next((t for t in settings.automation.tasks if t.name == name), None)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"unknown task {name!r}")
+        return executor.run_task(task).to_dict()
 
     @app.post("/v1/route")
     def route(req: ChatRequest) -> dict[str, str]:
