@@ -64,7 +64,8 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.desktop.agent` | Proceso local `nova-agent` (base del Desktop Agent, PHASE 6). |
 | `nova.api.app` | API REST (FastAPI): `create_app` reutiliza el Core; sesiones con memoria y tools por petición, agentes persistentes por nombre. |
 | `nova.api.server` | Entry point `nova-api`: levanta `uvicorn` con `APISettings`. |
-| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run` + `/agents` + `/agent`; incluye las host tools). |
+| `nova.voice` | Voice local (PHASE 10, ADR-017): `VoiceSession` (captura -> STT -> wake word -> chat -> TTS), backends OSS `VoskSTT`/`Pyttsx3TTS`/`SoundDeviceSource` detrás de contratos inyectables; off por defecto y extra `[voice]`. |
+| `nova.cli.chat` | Shell de conversación interactiva (chat + memoria + `/tools` + `/run` + `/agents` + `/agent`; incluye las host tools y voz `/voice`/`/say`). |
 
 ## Desacoplamiento del proveedor LLM
 
@@ -240,6 +241,27 @@ defecto). Integración: CLI y `nova-agent` (`BANNER`/HELP y registry `memory + h
 (`web.search_url` con `{query}`; DuckDuckGo HTML por defecto, sin API key). Detalle en [tools.md](tools.md)
 y política en [security.md](security.md).
 
+## Voice (PHASE 10) — ADR-017
+
+La voz es **100% local** (el audio jamás sale del dispositivo) y entra por el **mismo chat** que el
+teclado: solo origina texto.
+
+```
+mic (SoundDeviceSource, hilo de fondo)  --PCM16 --> VoskSTT (offline) --> texto
+   texto -> chat_line()  (memoria + router + tools + audit, igual que teclado)
+   respuesta -> Pyttsx3TTS (voces del sistema) -> altavoz
+```
+
+- `VoiceSession` (nova/voice/pipeline.py): `listen_once()` captura en un hilo mientras `wait_fn` bloquea
+  (en el CLI, "pulsa ENTER al terminar"), concatena los chunks y devuelve el transcript ya aplicado el
+  wake word opcional (`voice.wake_word`, match case-insensitive por palabra inicial). `say(text)` habla.
+- **Off por defecto** (`voice.enabled: false`, `build_voice` -> `None`); dependencias en el extra
+  `[voice]` con imports lazy: `available()`/`status()` permiten degradar (mic/stt/tts) sin romper.
+- Backends detrás de contratos inyectables (`STTProvider`/`TTSProvider`/`AudioSource`): los tests usan
+  fakes. La voz no tiene permisos propios ni nueva superficie de tools: `chat_line` es compartido.
+- CLI: `/voice` (bucle, ENTER al terminar, `/voice stop`) y `/say <texto>`. Política en
+  [security.md](security.md).
+
 ## Arquitectura objetivo (evolución incremental)
 
 La visión de producto mapea sobre esta estructura sin saltos de arquitectura:
@@ -277,7 +299,7 @@ del host.
 
 ## Caminos futuros (incremental)
 
-- **PHASE 9-12** — Web tools, voz, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
+- **PHASE 10-12** — Voice, plugins y automatización avanzada. Detalle en [roadmap.md](roadmap.md).
 
 ## Restricciones de diseño
 

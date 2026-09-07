@@ -147,6 +147,38 @@ class WebSettings(BaseSettings):
     search_max: int = 5
 
 
+class VoiceSTTSettings(BaseSettings):
+    """PHASE 10 — speech-to-text backend. OSS/local: `vosk` (offline)."""
+
+    backend: str = "vosk"
+    model_dir: str | None = None
+    language: str = "es"
+
+
+class VoiceTTSSettings(BaseSettings):
+    """PHASE 10 — text-to-speech backend. OSS/local: `pyttsx3` (OS voices)."""
+
+    backend: str = "pyttsx3"
+    voice: str | None = None
+    rate: int = 180
+
+
+class VoiceSettings(BaseSettings):
+    """PHASE 10 — local voice pipeline (STT -> chat -> TTS).
+
+    Off by default. Never depends on a paid/cloud API: audio is captured and
+    recognized on-device (Vosk) and answers are spoken with local OS voices
+    (pyttsx3). `wake_word` (optional) makes the loop only react when a message
+    starts with that word (matched case-insensitively from the transcript).
+    """
+
+    enabled: bool = False
+    stt: VoiceSTTSettings = VoiceSTTSettings()
+    tts: VoiceTTSSettings = VoiceTTSSettings()
+    wake_word: str | None = None
+    device: str | None = None
+
+
 class NovaSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
@@ -162,6 +194,7 @@ class NovaSettings(BaseSettings):
     api: APISettings = APISettings()
     host: HostSettings = HostSettings()
     web: WebSettings = WebSettings()
+    voice: VoiceSettings = VoiceSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -224,6 +257,13 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "search_url": "search_url",
         "search_max": "search_max",
     },
+    "voice": {
+        "enabled": "enabled",
+        "wake_word": "wake_word",
+        "device": "device",
+        "stt_backend": "stt.backend",
+        "tts_backend": "tts.backend",
+    },
 }
 
 
@@ -231,8 +271,13 @@ def _apply_env(data: dict[str, Any], prefix: str = ENV_PREFIX) -> None:
     for section, fields in _ENV_OVERRIDES.items():
         for env_key, model_field in fields.items():
             value = os.environ.get(f"{prefix}{section.upper()}_{env_key.upper()}")
-            if value is not None:
-                data.setdefault(section, {})[model_field] = value
+            if value is None:
+                continue
+            target = data.setdefault(section, {})
+            parts = model_field.split(".")
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = value
 
 
 def load_settings(path: str = "config/config.yaml", prefix: str = ENV_PREFIX) -> NovaSettings:

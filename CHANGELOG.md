@@ -2,6 +2,22 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.10.0] - 2026-09-07
+
+### Añadido — PHASE 10: Voice (STT/TTS local, sin APIs de pago)
+
+- **Paquete `nova/voice/`**: pipeline local de voz con backends OSS e import lazy (`available()` degrada sin romper N.O.V.A. si el extra `[voice]` no está instalado).
+  - `base.py`: `AudioChunk`, contratos `STTProvider`/`TTSProvider`/`AudioSource`, `VoiceError` y helper puro `detect_wake_word` (match case-insensitive, tolerante a puntuación, borra el wake word del resto).
+  - `vosk.py` `VoskSTT`: STT offline (modelo descargado por el usuario en `voice.stt.model_dir`).
+  - `tts.py` `Pyttsx3TTS`: TTS con voces del sistema (Windows SAPI5 / eSpeak), offline.
+  - `audiosource.py` `SoundDeviceSource`: captura de micrófono (sounddevice/PortAudio, int16 mono PCM).
+  - `pipeline.py` `VoiceSession`: captura en hilo de fondo -> STT -> wake word -> texto; `say(text)` habla; `build_voice(settings)` devuelve `None` con `voice.enabled: false` (off por defecto). Accesible vía `nova.voice` y package `nova/voice/`.
+- **Config**: `VoiceSettings` (+ `VoiceSTTSettings`/`VoiceTTSSettings`) en `nova/core/config.py`; `_apply_env` ahora soporta rutas anidadas (p. ej. `NOVA_VOICE_STT_BACKEND`). Sección `voice:` en `config/config.yaml` (enabled, stt.model_dir/language, tts.voice/rate, wake_word, device).
+- **Integración CLI**: refactor a `chat_line(text)` compartido entre teclado y voz (misma memoria/router/audit). Comandos `/voice` (bucle STT->chat->TTS; ENTER al terminar, `/voice stop` para salir) y `/say <texto>`. Banner y `/help` actualizados.
+- **Deps**: extra opcional `[voice]` en `pyproject.toml` (`vosk`, `pyttsx3`, `sounddevice`).
+- **Tests**: `tests/test_voice.py` con 18 tests (fakes de audio/STT/TTS: flujo listen->transcribe, wake word filtra/recorta, concatenación de chunks, error de STT no rompe, transcripts vacíos, availability/status, backends sin dependencias con monkeypatch de import, config yaml/env anidado). Total: **219** (201 previos + 18), 2 skips.
+- **Docs**: `docs/roadmap.md` (PHASE 10 ✅), `docs/decisions.md` (ADR-017), `docs/security.md` (voz local), `docs/architecture.md` (módulo `nova.voice` + sección), `docs/setup.md` (instalar extra, descargar modelo Vosk, wake word), `README.md` (sección Voice + quickstart). Versión: **0.10.0**.
+
 ## [0.9.0] - 2026-09-07
 
 ### Añadido — PHASE 9: Web Tools (separación LLM / Web)

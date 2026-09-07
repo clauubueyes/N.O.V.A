@@ -19,7 +19,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 9 Model Router | **PHASE 7 — Model Router + Resource Manager** | ✅ |
 | PHASE 8 Remote connectivity | **PHASE 8 — Acceso remoto + auth + frontend** | ⏳ pasos 1-2 hechos |
 | — (web tools) | **PHASE 9 — Web Tools** | ✅ |
-| PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | pendiente |
+| PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | ✅ |
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | pendiente |
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | pendiente |
 
@@ -138,9 +138,29 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 
 ## PHASE 10 — Voice
 
-- [ ] STT local (OSS) y TTS local (OSS); pipeline de voz sin APIs de pago.
-- [ ] Wake word opcional.
-- [ ] Integración con el chat existente (la voz origina texto y las respuestas se hablan).
+- [x] **STT local (OSS)** vía `nova/voice/vosk.py` (`VoskSTT`, modelo offline descargado una vez por el
+  usuario y referenciado en `voice.stt.model_dir`) y **TTS local (OSS)** vía `nova/voice/tts.py`
+  (`Pyttsx3TTS`, voces del sistema: Windows SAPI5 / eSpeak). Ambos con **import lazy** y `available()`
+  para degradar sin romper N.O.V.A. si `[voice]` no está instalado.
+- [x] **Pipeline de voz** (`nova/voice/pipeline.py`): captura de micrófono
+  (`SoundDeviceSource`, sounddevice/PortAudio) en hilo de fondo -> STT -> texto -> el **mismo** flujo de
+  chat que el teclado (memoria + router + tools) -> TTS habla la respuesta. **Off por defecto**
+  (`voice.enabled: false`), sin APIs de pago.
+- [x] **Wake word opcional** (`voice.wake_word`): el bucle solo reacciona a mensajes que empiezan por la
+  palabra (match case-insensitive sobre el transcript; se elimina antes de enviar). Helper puro
+  `detect_wake_word` en `nova/voice/base.py`.
+- [x] **Integración con el chat** (CLI): `/voice` entra/sale del bucle STT->chat->TTS (pulsa ENTER al
+  terminar de hablar, `/voice stop` para salir) y `/say <texto>` habla una línea. El chat se refactorizó
+  a `chat_line(text)` compartido entre teclado y voz — misma memoria, router, sistema de prompts y audit.
+- [x] Tests dedicados (`tests/test_voice.py`, 18): fakes de audio/STT/TTS (sin micrófono ni modelos),
+  flujo listen->transcribe, wake word (filtra/recorta), concatenación de chunks, STT con error no rompe
+  el bucle, transcripts vacíos, availability/status y backends sin dependencias (monkeypatch de import),
+  config yaml/environment anidado. Total: **219** (201 previos + 18), 2 skips.
+- [ ] (Nota) Integración de voz remota (móvil -> API) con STT/TTS en el servidor: fase futura — el
+  pipeline actual es local (CLI). Ver ADR-017.
+
+> Local-first (ADR-017): el audio jamás sale del dispositivo; STT y TTS corren en tu máquina con modelos
+> OSS. `[voice]` es un extra opcional (`pip install -e ".[dev,voice]"`).
 
 ## PHASE 11 — Plugins
 

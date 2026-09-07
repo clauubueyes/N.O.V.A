@@ -19,6 +19,7 @@ from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
 from nova.tools.web import all_web_tools
+from nova.voice import VoiceSession, build_voice
 
 BANNER = """\
 +--------------------------------------------------------------+
@@ -26,6 +27,7 @@ BANNER = """\
 | Phase 6 - Desktop Agent (host: open_app/open_url/run + files) | Ollama |
 | Phase 7 - Model Router + Resource Manager                    |
 | Phase 9 - Web Tools (web_search / web_fetch / web_extract)    |
+| Phase 10 - Voice (STT/Vosk + TTS/pyttsx3, local)              |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -47,6 +49,9 @@ Commands:
   /run web_search   search the web (PHASE 9): /run web_search {"query":"..."}
   /run web_fetch    read a page:   /run web_fetch {"url":"https://..."}
   /run web_extract  list links:    /run web_extract {"url":"https://..."}
+  /voice            start the voice loop (STT -> chat -> TTS, PHASE 10)
+  /voice stop       stop the voice loop  (also type /voice while listening)
+  /say <text>       speak a line with the local TTS
   /remember <text>  store a fact in persistent memory
   /memory [query]   search memories or list the most recent ones
   /agents           list available agents
@@ -131,6 +136,38 @@ def main() -> int:
             )
             agents[name] = agent
         return agent
+
+    voice = build_voice(settings.voice)
+
+    def chat_line(text: str) -> str | None:
+        """Run one user utterance through the chat state and return the
+        assistant answer (printed and stored). Shared by typed and voice input."""
+        session.add_user(text)
+        memory.record("user", text)
+        logger.info("user: %s", text)
+        try:
+            decision = router.route_for(text)
+            request = session.build_request(model=decision.model)
+            context = memory.context(text)
+            if context:
+                request = ChatCompletionRequest(
+                    messages=request.messages[:-1]
+                    + [ChatMessage(role="system", content=context)]
+                    + [request.messages[-1]],
+                    model=request.model,
+                )
+                logger.debug("injected memory context:\n%s", context)
+            response = provider.chat(request)
+        except NOVAProviderError as exc:
+            print(f"[nova error] {exc}")
+            logger.warning("nova error: %s", exc)
+            return None
+        answer = response.message.content
+        session.add_assistant(answer)
+        memory.record("assistant", answer)
+        print(f"N.O.V.A> {answer}")
+        logger.info("assistant (model=%s): %s", response.model, answer)
+        return answer
 
     try:
         while True:
@@ -251,40 +288,68 @@ def main() -> int:
                             continue
                     result = tools_runner.run(tool_name, args)
                     print(_format_result(result))
+                elif command == "say":
+                    text = " ".join(parts[1:]).strip()
+                    if voice is None:
+                        print("[voice not configured] enable voice.enabled in config/config.yaml")
+                        continue
+                    if not text:
+                        print("Usage: /say <text>")
+                        continue
+                    print(f"[tts] {text}" if voice.say(text) else "[tts error]")
+                elif command == "voice":
+                    if voice is None:
+                        print("[voice not configured] enable voice.enabled in config/config.yaml")
+                        continue
+                    missing = voice.status()
+                    if missing:
+                        print("[voice not available] missing: " + ", ".join(missing))
+                        continue
+                    print("[voice mode] speak to N.O.V.A. Press ENTER when done or type /voice stop.")
+                    stop_voice = False
+                    typed: list[str] = []
+
+                    def wait_utterance_end() -> bool:
+                        try:
+                            typed.append(
+                                input("[voice] speak now, press ENTER when you finish... ").strip()
+                            )
+                        except (EOFError, KeyboardInterrupt):
+                            pass
+                        return True
+
+                    try:
+                        while not stop_voice:
+                            transcript = voice.listen_once(wait_fn=wait_utterance_end)
+                            last = typed[-1] if typed else ""
+                            if last.lower() in ("/voice", "/voice stop", "stop", "/exit"):
+                                stop_voice = True
+                                continue
+                            if transcript is None:
+                                print("[voice] (no speech detected)")
+                                continue
+                            if transcript == "":
+                                print(f"[voice] ignored (wake word '{voice.wake_word}' not present)")
+                                continue
+                            print(f"You   > [voice] {transcript}")
+                            answer = chat_line(transcript)
+                            if answer:
+                                voice.say(answer)
+                    except KeyboardInterrupt:
+                        pass
+                    print("[voice mode] stopped.")
                 elif command == "help":
                     print(HELP)
                 else:
                     print(f"Unknown command: {command}. Type /help.")
                 continue
 
-            session.add_user(line)
-            memory.record("user", line)
-            logger.info("user: %s", line)
-            try:
-                decision = router.route_for(line)
-                request = session.build_request(model=decision.model)
-                context = memory.context(line)
-                if context:
-                    request = ChatCompletionRequest(
-                        messages=request.messages[:-1]
-                        + [ChatMessage(role="system", content=context)]
-                        + [request.messages[-1]],
-                        model=request.model,
-                    )
-                    logger.debug("injected memory context:\n%s", context)
-                response = provider.chat(request)
-            except NOVAProviderError as exc:
-                print(f"[nova error] {exc}")
-                logger.warning("nova error: %s", exc)
-                continue
-            answer = response.message.content
-            session.add_assistant(answer)
-            memory.record("assistant", answer)
-            print(f"N.O.V.A> {answer}")
-            logger.info("assistant (model=%s): %s", response.model, answer)
+            chat_line(line)
     finally:
         provider.close()
         memory.close()
+        if voice is not None:
+            voice.close()
 
     return 0
 

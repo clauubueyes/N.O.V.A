@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 9 — Web Tools** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo** por tarea + recursos + privacidad con `ResourceManager` y catálogo `llm.models`, **acceso remoto seguro con token Bearer + CORS + host tools vinculadas a la API**, y **web tools controladas** `web_search`/`web_fetch`/`web_extract` con robots.txt + rate limit + caps, off por defecto y separación LLM / Web). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
+Estado actual: **PHASE 10 — Voice local** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, y **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -28,6 +28,12 @@ Usuario -> N.O.V.A. -> LLM (local) -> N.O.V.A. Core -> Permission System -> Tool
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\nova
+```
+
+Voz (opcional, PHASE 10 — 100% local, sin APIs de pago):
+
+```powershell
+.\.venv\Scripts\python -m pip install -e ".[dev,voice]"   # vosk + pyttsx3 + sounddevice
 ```
 
 Interfaz web y API REST:
@@ -122,6 +128,21 @@ Cada petición pasa por: validación de URL (solo http(s), sin userinfo) -> `rob
 host -> caps de bytes/caracteres, con User-Agent identificable. La búsqueda usa `web.search_url`
 (DuckDuckGo sin API key por defecto; permite SearXNG/Brave). Detalle en [docs/tools.md](docs/tools.md).
 
+## Voice (PHASE 10)
+
+Voz **100% local** (ADR-017): el audio jamás sale de tu dispositivo. STT con **Vosk** (modelo
+offline) y TTS con **pyttsx3** (voces del sistema). **Off por defecto** (`voice.enabled: false`).
+
+```text
+/voice               # bucle: habla, pulsa ENTER al terminar; /voice stop para salir
+/say hola            # habla una línea con TTS
+```
+
+La voz entra por el **mismo chat** que el teclado (memoria + router + tools + audit): vía `/voice`,
+el transcript se envía y la respuesta se habla. Opcional: `voice.wake_word: "nova"` hace que solo
+reaccione a mensajes que empiecen por esa palabra. Requiere instalar el extra `[voice]` y descargar un
+modelo Vosk; sin ellos N.O.V.A. funciona igual y `/voice` avisa de qué falta.
+
 ## Agentes (PHASE 5)
 
 Los agentes dejan que el LLM **proponga** tools y N.O.V.A. las ejecute bajo el Permission System. Hay 5 presets: `general`, `coding`, `research`, `system` y `automation`.
@@ -144,6 +165,7 @@ nova/
   tools/             Herramientas (BaseTool + schemas) + Permission System + runner
     host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
     web/             Web tools controladas: web_search/web_fetch/web_extract (PHASE 9)
+  voice/             Voice local: STT Vosk + TTS pyttsx3 + mic — 100% local (PHASE 10)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)

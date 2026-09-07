@@ -132,3 +132,23 @@ web:
   # tier) and set search_url accordingly; the LLM keeps the same tool interface.
   search_url: "https://html.duckduckgo.com/html/?q={query}"
   search_max: 5
+
+voice:
+  # PHASE 10 — Voice (STT/TTS local, sin APIs de pago). OFF by default.
+  #   enabled: true habilita los backends de voz en el CLI (/voice para el bucle
+  #   STT -> chat -> TTS, /say <texto> para hablar una línea).
+  # STT: vosk (offline). Descarga un modelo pequeño y apunta model_dir a él, p. ej.:
+  #   https://alphacephei.com/vosk/models -> vosk-model-small-es-0.42 (es)
+  enabled: false
+  stt:
+    backend: vosk
+    model_dir: null          # ruta a la carpeta del modelo Vosk (obligatoria)
+    language: es
+  tts:
+    backend: pyttsx3         # voces del sistema (Windows SAPI5 / eSpeak), offline
+    voice: null              # nombre de voz opcional (engine setProperty "voice")
+    rate: 180                # velocidad de habla
+  # Wake word opcional: solo reacciona a mensajes que EMPIEZAN por esta palabra
+  # (comparación por defecto case-insensitive sobre el transcript). p.ej. "nova".
+  wake_word: null
+  # device: null             # índice o nombre del dispositivo de entrada (sounddevice)

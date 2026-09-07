@@ -163,6 +163,21 @@ Reglas:
   modelo un cliente HTTP genérico — si la extracción falla, degrada con un `ToolResult` de error y el
   resto del sistema (permisos, audit) aplica igual que con cualquier otra tool.
 
+## Voz local (PHASE 10) — ADR-017
+
+- **El audio jamás sale del dispositivo**: STT (Vosk, offline) y TTS (voces del sistema) corren en tu
+  máquina; N.O.V.A. no sube grabaciones ni usa APIs de pago/cloud de voz.
+- **Off por defecto** (`voice.enabled: false`) y extra opcional `[voice]` con imports lazy: no instalar
+  voz no cambia el comportamiento y el arranque no pisa código tuyo si falta la lib.
+- El micrófono captura **solo durante el bucle `/voice`** (mientras esperas, tras el prompt); la sesión
+  de voz se cierra al salir del chat (`voice.close()`). Con `voice.wake_word` configurado, solo se
+  procesa el mensaje que empieza por el wake word; el resto se ignora y no llega al chat.
+- **La voz origina texto y nada más**: entra por el mismo `chat_line` que el teclado — memoria, router,
+  Permission System, tools y audit aplican idénticos; no existe una vía de audio que salte los permisos.
+- Los backends reales (`vosk`/`pyttsx3`/`sounddevice`) están **detrás del contrato** `STTProvider`/
+  `TTSProvider`/`AudioSource`; si un backend falla devuelve un error capturado (`VoiceError`) y el bucle
+  sigue. El `audit` no se ve afectado: la voz no ejecuta tools por sí misma.
+
 ## Privacidad (ADR-013)
 
 - Local-first: conversaciones y datos permanecen en el dispositivo salvo consentimiento explícito.

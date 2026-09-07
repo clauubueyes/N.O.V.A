@@ -149,3 +149,15 @@ Formato ligero de "Architecture Decision Records". Cada decisión importante se 
   4. **Robots y cortesía**: parser RFC-9309 (Allow/Disallow, prefijo más largo gana) cacheado por host; `min_delay_s` entre peticiones al mismo host; `max_redirects`/`max_bytes`/`max_chars` acotan el impacto.
 - **Consecuencias:** el LLM propone query/URL; las Web Tools ejecutan con sus límites; `ToolRunner` decide y audita. Cualquier fetch se ve en `logs/audit.nova.jsonl` como cualquier tool. Tests en `tests/test_web_tools.py` (fakes con `httpx.MockTransport`).
 - **Estado:** aceptada.
+
+## ADR-017 — Voz 100% local: el audio jamás sale del dispositivo
+
+- **Fecha:** 2026-09-07
+- **Contexto:** PHASE 10 añade voz (escuchar y hablar). Hay APIs de pago maduras, pero violan el compromiso local-first/coste cero (ADR-013). Además, el micrófono captura conversaciones privadas; enviarlas a un tercero rompería la privacidad garantizada por ADR-013 y sorprendería al usuario.
+- **Decisión:**
+  1. **STT y TTS locales y OSS**: `VoskSTT` (modelo offline descargado una vez por el usuario) y `Pyttsx3TTS` (voces del sistema). **Sin APIs de pago ni servidores**: N.O.V.A. nunca sube audio grabado.
+  2. **Off por defecto y extra opcional**: `voice.enabled: false`; las dependencias viven en el extra `[voice]` y se importan **lazy** — instalar o no voz no cambia el arranque ni rompe N.O.V.A.
+  3. **Abstracción inyectable**: contratos `STTProvider`/`TTSProvider`/`AudioSource` + factory `build_voice`; los tests usan fakes (sin micrófono ni modelos). Un backend alternativo futuro (p. ej. whisper.cpp) se añade sin tocar el pipeline.
+  4. **La voz entra por el mismo chat**: `chat_line(text)` compartido — la voz solo origina texto; memoria, router, tools y audit del teclado aplican idénticos.
+- **Consecuencias:** el CLI gana `/voice` y `/say`; el bucle es local (un futuro uso remoto móvil->API requeriría exponer audio y se decidiría aparte, con el consentimiento explícito del ADR-013). Tests en `tests/test_voice.py`.
+- **Estado:** aceptada.

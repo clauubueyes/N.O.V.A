@@ -24,6 +24,38 @@ python -m venv .venv
 
 Instala el paquete `nova` en modo editable + dependencias de desarrollo (`pytest`).
 
+### Voice (PHASE 10, opcional)
+
+Voz **local** (STT/TTS OSS, ADR-017 — el audio jamás sale del dispositivo). Instala el extra y un modelo
+Vosk pequeño:
+
+```powershell
+.\.venv\Scripts\python -m pip install -e ".[dev,voice]"
+# Descarga un modelo de voz para tu idioma:
+#   https://alphacephei.com/vosk/models  -> p. ej. vosk-model-small-es-0.42
+Invoke-WebRequest -Uri https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip -OutFile vosk-model.zip
+Expand-Archive -Path vosk-model.zip
+```
+
+Configura `config/config.yaml`:
+
+```yaml
+voice:
+  enabled: true
+  stt:
+    backend: vosk
+    model_dir: "vosk-model-small-es-0.42"   # ruta del modelo descargado
+    language: es
+  tts:
+    backend: pyttsx3                        # voces del sistema (SAPI5/eSpeak)
+  wake_word: null                           # opcional: p. ej. "nova"
+```
+
+Y en el chat: `/voice` inicia el bucle (habla y pulsa ENTER al terminar; `/voice stop` sale) y
+`/say <texto>` habla una línea con TTS. Con `wake_word` configurado solo reacciona a mensajes que
+empiecen por esa palabra. Sin el extra instalado, N.O.V.A. funciona igual (los backends están detrás de
+import lazy y degradan con un aviso).
+
 ## Configuración
 
 Copia/edita `config/config.yaml`:
