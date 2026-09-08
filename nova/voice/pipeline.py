@@ -60,13 +60,15 @@ class VoiceSession:
         stop_flag = threading.Event()
 
         def capture() -> None:
-            self.source.start()
             try:
+                self.source.start()
                 while not stop_flag.is_set():
                     chunk = self.source.read_chunk()
                     if chunk is None:
                         break
                     chunks.append(chunk)
+            except VoiceError as exc:
+                self._logger.warning("voice: audio capture failed: %s", exc)
             finally:
                 self.source.stop()
 

@@ -59,10 +59,10 @@ web:
   search_url: https://html.duckduckgo.com/html/?q={query}
   search_max: 5
 voice:
-  enabled: false
+  enabled: true
   stt:
     backend: vosk
-    model_dir: null
+    model_dir: C:\Users\Claudia-Everlasting\.nova\vosk\vosk-model-small-es-0.42
     language: es
   tts:
     backend: pyttsx3
