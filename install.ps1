@@ -45,7 +45,7 @@ function Find-Python {
     foreach ($base in $probe) {
         if (Test-Path $base) {
             $exe = Get-ChildItem "$base\Python*\python.exe" -ErrorAction SilentlyContinue |
-                Sort-Object { [version]($_.Directory.Name -replace 'Python','') } -Descending |
+                Sort-Object { [int]($_.Directory.Name -replace 'Python','') } -Descending |
                 Select-Object -First 1 -ExpandProperty FullName
             if ($exe) { return $exe }
         }
