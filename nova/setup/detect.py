@@ -176,8 +176,27 @@ def detect_python_packages() -> dict[str, bool]:
     return out
 
 
+def _find_ollama_bin() -> str | None:
+    """Locate the `ollama` executable, on PATH or at common install locations."""
+    on_path = shutil.which("ollama")
+    if on_path:
+        return on_path
+    candidates = []
+    if sys.platform.startswith("win"):
+        candidates.append(
+            os.path.join(
+                os.environ.get("LOCALAPPDATA", ""),
+                "Programs", "Ollama", "ollama.exe",
+            )
+        )
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
 def detect_ollama(url: str = "http://localhost:11434") -> OllamaStatus:
-    ollama_bin = shutil.which("ollama")
+    ollama_bin = _find_ollama_bin()
     status = OllamaStatus(
         installed=ollama_bin is not None,
         base_url=url,
@@ -193,10 +212,22 @@ def detect_ollama(url: str = "http://localhost:11434") -> OllamaStatus:
                 if name:
                     status.models.append(name)
         else:
+            # Binary present but the `list` command failed (server not serving).
+            # Fall back to an HTTP probe: it may still be running remotely isn't
+            # the point here — report accurately what the binary told us.
             status.message = (
                 "Ollama binary found but not serving; run `ollama serve` "
                 "(or start the Ollama app)"
             )
+    # Regardless of the binary, an answering endpoint is the real signal that
+    # the server is up. If it answers, treat it as installed+running.
+    if _url_reachable(url):
+        status.installed = True
+        status.running = True
+        if status.models or (not status.message or "not serving" in status.message):
+            status.message = "Ollama is installed and serving"
+        # If the binary was found we already filled models; otherwise the models
+        # stay as discovered (empty list is fine).
     return status
 
 
@@ -213,7 +244,7 @@ def _url_reachable(url: str, timeout: float = 2.0) -> bool:
 
 def start_ollama() -> bool:
     """Launch `ollama serve` detached (best-effort). True if the process started."""
-    ollama_bin = shutil.which("ollama")
+    ollama_bin = _find_ollama_bin()
     if not ollama_bin:
         return False
     try:
