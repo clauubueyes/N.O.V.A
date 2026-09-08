@@ -22,6 +22,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 11 Voice | **PHASE 10 — Voice (STT/TTS local)** | ✅ |
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | ✅ |
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | ✅ |
+| — (setup/install) | **PHASE 13 — Setup/Install Wizard** | ✅ |
 
 ## PHASE 0 — Discovery ✅
 
@@ -199,6 +200,34 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 
 > La automatización amplía el horario de ejecución de N.O.V.A., NO sus permisos: un task/workflow
 > solo corre lo que `permissions.allow` permite (con `ask` denegado en modo desatendido). Ver ADR-019.
+
+## PHASE 13 — Setup/Install Wizard ✅
+
+- [x] **Detección de máquina real** (`nova/setup/detect.py`): RAM física (Windows vía
+  `GlobalMemoryStatusEx`, POSIX vía `os.sysconf`) y VRAM de GPU/`nvidia-smi` con fallback WMI — todo
+  best-effort y sin dependencias pesadas. `MachineProfile` + `OllamaStatus` (binary presente, `ollama
+  serve` respondiendo, modelos instalados con normalización `:latest`).
+- [x] **Recomendación de modelos por hardware** (`nova/setup/models.py`): `llm3.2:3b` para máquinas
+  modestas; `llama3.1:8b` + `llama3.2:1b` + `qwen2.5-coder:7b` para RAM ≥ 12 GB o VRAM ≥ 8 GB; siempre
+  `nomic-embed-text`. Coincide con el catálogo `llm.models` del ModelRouter.
+- [x] **Provision seguro de `config.yaml`** (`nova/setup/provision.py`): escribe defaults al arrancar
+  sin bajar la seguridad (herramientas denegadas por defecto, `web`/`voice`/`automation` off, plugins
+  seguros `text_tools`/`units` on, host apps configurables por nombre). **Nunca sobreescribe** un valor
+  del usuario (`_set` solo si falta la clave).
+- [x] **Asistente guiado de primer arranque** (`nova/setup/assistant.py`): detecta el hardware,
+  comprueba/arranca Ollama, descarga los modelos que falten (`POST /api/pull` stream), escribe el
+  config y ofrece autostart. Modo `auto` no interactivo.
+- [x] **Autostart opcional** (`nova/setup/autostart.py`): Windows `HKCU\...\Run`, Linux
+  `.config/autostart`, macOS LaunchAgents. Solo usuario, nunca sistema.
+- [x] **CLI `nova-setup`** (`nova/setup/cli.py`): `doctor` (diagnóstico), `auto`, `status`,
+  `autostart --enable 0|1` e interactivo. Despachable también como `nova setup`/`nova doctor`.
+- [x] **Integración chat**: `/setup`, `/doctor` y hint amigable en el primer arranque si no hay modelos.
+- [x] **`OllamaProvider.pull_model`** (streaming de progreso por layers) + `has_model`.
+- [x] Tests dedicados (`tests/test_setup.py`, 12). Total: **284** (272 previos + 12), warnings fastapi.
+- [ ] (Fuera de alcance acordado) Añadir presets de plugins concretos (spotify/vscode/home-assistant).
+
+> El instalador es una capa de confort, no un bypass: los defaults que genera pasan por el mismo
+> Permission System + audit. Los permisos/autonomía nunca se elevan sin el consentimiento del usuario.
 
 ---
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Sequence
+import json
+from typing import Callable, Sequence
 
 import httpx
 
@@ -19,6 +20,10 @@ logger = get_logger("llm.ollama")
 _CHAT_URL = "/v1/chat/completions"
 _TAGS_URL = "/api/tags"
 _EMBED_URL = "/api/embed"
+_PULL_URL = "/api/pull"
+
+#: Progress callback signature: (bytes_read, total_bytes_or_None, status_str)
+PullProgress = Callable[[int, int | None, str], None]
 
 
 class OllamaProvider(LLMProvider):
@@ -101,6 +106,68 @@ class OllamaProvider(LLMProvider):
             return True
         except (httpx.HTTPStatusError, httpx.RequestError):
             return False
+
+    def pull_model(
+        self,
+        name: str,
+        progress: PullProgress | None = None,
+        timeout: float | None = None,
+    ) -> str:
+        """Download a model with `POST /api/pull`, reporting progress.
+
+        The Ollama pull endpoint streams newline-delimited JSON objects:
+        `{"status": "pulling manifest", ...}`,
+        `{"status": "downloading", "digest": ..., "total": N, "completed": M}`, and
+        a final `{"status": "success"}`. Each completed/status frame is passed to the
+        optional `progress(completed, total, status)` callback. Returns the final
+        status string.
+        """
+        try:
+            with self._client.stream(
+                "POST", _PULL_URL, json={"name": name, "stream": True}, timeout=timeout
+            ) as response:
+                response.raise_for_status()
+                final_status = "unknown"
+                seen: dict[str, tuple[int, int | None]] = {}
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        frame = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    status = frame.get("status", "")
+                    if status == "success":
+                        final_status = status
+                        if progress:
+                            progress(0, 0, status)
+                        continue
+                    digest = frame.get("digest", "")
+                    completed = int(frame.get("completed", 0) or 0)
+                    total = frame.get("total")
+                    total = int(total) if total else None
+                    if digest:
+                        # Report the summed progress of all active layer downloads.
+                        seen[digest] = (completed, total)
+                        if progress:
+                            done = sum(c for c, _ in seen.values())
+                            tot = sum(t for _, t in seen.values() if t is not None) or None
+                            progress(done, tot, status)
+                    elif progress:
+                        progress(0, 0, status)
+                return final_status
+        except httpx.HTTPStatusError as exc:
+            raise NOVAProviderError(
+                f"Ollama returned HTTP {exc.response.status_code} pulling '{name}': {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise NOVAProviderError(
+                f"Could not reach Ollama at {self._settings.base_url} pulling '{name}': {exc}"
+            ) from exc
+
+    def has_model(self, name: str) -> bool:
+        """Return True when a model (or digest) is already present locally."""
+        return any(m.name == name for m in self.list_models())
 
     def embed_text(self, texts: str | Sequence[str]) -> list[list[float]]:
         if isinstance(texts, str):

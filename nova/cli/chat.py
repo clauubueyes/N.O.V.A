@@ -32,6 +32,7 @@ BANNER = """\
 | Phase 10 - Voice (STT/Vosk + TTS/pyttsx3, local)              |
 | Phase 11 - Plugins (text_tools / units, PHASE 11)             |
 | Phase 12 - Automation (scheduler + workflows, PHASE 12)       |
+| Phase 13 - Installer (nova setup / doctor / autostart)        |
 +--------------------------------------------------------------+"""
 
 HELP = """\
@@ -64,6 +65,8 @@ Commands:
   /workflow <name>  run a configured automation workflow (PHASE 12)
   /workflows        list configured automation workflows (PHASE 12)
   /automation       scheduler status + scheduled tasks (PHASE 12)
+  /setup            run the guided first-run installer (detect machine, pull models)
+  /doctor           print a diagnostic summary (Ollama, models, packages)
   /help             show this help"""
 
 
@@ -103,7 +106,30 @@ def _format_workflow_result(result) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def _hint_setup(provider, settings) -> None:
+    """Best-effort first-run hint; never raises or blocks the chat session."""
+    from nova.llm.base import NOVAProviderError
+
+    try:
+        models = provider.list_models()
+    except NOVAProviderError:
+        models = []
+    if not models:
+        print(
+            "\n[setup hint] No local models found. Run `nova setup` to detect your "
+            "machine, install Ollama models and write config.yaml in one go."
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    # `nova setup ...` / `nova doctor ...` dispatch to the installer CLI.
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] in ("setup", "doctor"):
+        from nova.setup.cli import main as setup_main
+
+        return setup_main(argv[1:] if argv[0] == "setup" else argv)
+
     settings = load_settings()
     setup_logging(settings.logging)
     logger = get_logger("cli.chat")
@@ -137,8 +163,12 @@ def main() -> int:
     )
 
     print(BANNER)
-    print(f"Model: {current_model}. Type /help for commands.")
+    print(f"Model: {current_model}. Try /agents or /help for commands.")
     logger.info("session started, model=%s, memory=%s", current_model, memory.session_id)
+
+    # Friendly first-run hint: if Ollama is unreachable or has no models, point
+    # the user at the one-command installer instead of failing mid-conversation.
+    _hint_setup(provider, settings)
 
     agents: dict[str, Agent] = {}
 
@@ -438,6 +468,22 @@ def main() -> int:
                     except KeyboardInterrupt:
                         pass
                     print("[voice mode] stopped.")
+                elif command in ("setup", "install"):
+                    print("[setup] run from the shell: `nova setup` (interactive) or `nova setup --help`.")
+                    from nova.setup.detect import detect_machine, detect_ollama
+
+                    profile = detect_machine()
+                    print("Machine:")
+                    for line in profile.summary():
+                        print(f"  {line}")
+                    st = detect_ollama()
+                    print(f"Ollama: {st.message}")
+                    continue
+                elif command == "doctor":
+                    from nova.setup.cli import _do_doctor
+
+                    _do_doctor()
+                    continue
                 elif command == "help":
                     print(HELP)
                 else:

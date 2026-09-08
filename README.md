@@ -4,7 +4,7 @@
 
 Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
 
-Estado actual: **PHASE 12 — Automatización** (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, **plugins** que añaden tools bajo el mismo Permission System + audit, y **automatización** con scheduler de tareas programadas + workflows multi-paso bajo los mismos permisos). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
+Estado actual: **PHASE 13 — Setup/Install Wizard** (instalador automático `nova-setup` con detección de máquina RAM/GPU real, recomendación e instalación de los modelos Ollama adecuados, provision auto de `config.yaml` seguro, asistente guiado de primer arranque, autostart opcional y `nova doctor`). Añadida sobre la PHASE 12 — Automatización (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, **plugins** que añaden tools bajo el mismo Permission System + audit, y **automatización** con scheduler de tareas programadas + workflows multi-paso bajo los mismos permisos). Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
 
 Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
 
@@ -29,6 +29,32 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\nova
 ```
+
+### Instalador automático (PHASE 13) — `nova setup`
+
+El instalador detecta tu máquina (RAM real y VRAM de GPU en Windows), comprueba
+Ollama, **descarga los modelos adecuados a tu hardware** y escribe un
+`config/config.yaml` seguro y listo para usar — todo en un comando:
+
+```powershell
+.\.venv\Scripts\nova-setup          # asistente guiado (recomendado)
+.\.venv\Scripts\nova-setup auto     # bootstrap no interactivo
+.\.venv\Scripts\nova-setup doctor   # diagnóstico de salud
+.\.venv\Scripts\nova-setup autostart --enable 1   # arrancar N.O.V.A. al iniciar sesión
+```
+
+Lo que hace, según el hardware detectado (heurística conservadora):
+
+| RAM | GPU | Modelo por defecto | Stack |
+|---|---|---|---|
+| < 12 GB | — | `llama3.2:3b` | embedding + 3B + 1B |
+| ≥ 12 GB | — o ≥ 8 GB VRAM | `llama3.1:8b` | embedding + 8B + 1B + coder 7B |
+
+Los defaults que escribe **respetan el modelo de seguridad** (ADR-013): herramientas
+denegadas por defecto, `web`/`voice`/`automation` apagados, plugins seguros
+(`text_tools`/`units`) activados, y nunca sobreescribe un valor que ya tuvieras en
+tu `config.yaml`. También puedes lanzarlo desde dentro del chat con `/setup` y
+diagnosticar con `/doctor`.
 
 Voz (opcional, PHASE 10 — 100% local, sin APIs de pago):
 
@@ -226,6 +252,8 @@ nova/
   plugins/           Interfaz Plugin + cargador + built-ins text_tools/units (PHASE 11)
   automation/        Scheduler de tareas + workflows multi-paso bajo los mismos permisos (PHASE 12)
   voice/             Voice local: STT Vosk + TTS pyttsx3 + mic — 100% local (PHASE 10)
+  setup/             Setup/instalador: detección de máquina, instalación de modelos,
+                     provision de config, asistente JARVIS, autostart (PHASE 13)
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)

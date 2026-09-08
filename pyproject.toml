@@ -30,6 +30,7 @@ voice = [
 
 [project.scripts]
 nova = "nova.cli.chat:main"
+nova-setup = "nova.setup.cli:main"
 nova-api = "nova.api.server:main"
 nova-agent = "nova.desktop.agent:main"
 
