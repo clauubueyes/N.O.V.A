@@ -31,6 +31,14 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+function Trace-Cmd {
+    param([string]$Desc, [scriptblock]$Block)
+    Write-Host "  [ejecutando] $Desc" -ForegroundColor DarkGray
+    & $Block
+    $code = $LASTEXITCODE
+    Write-Host "  [salida] codigo=$code" -ForegroundColor DarkGray
+    return $code
+}
 
 # ---------------------------------------------------------------- Python
 # Fully self-contained: if Python is missing we download and install it from
@@ -104,8 +112,11 @@ $VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
 # ---------------------------------------------------------------- pip
 Write-Step "Installing N.O.V.A."
 $extra = if ($Voice) { ".[dev,voice]" } else { ".[dev]" }
+Write-Host "  [comando] $VenvPy -m pip install -e '$extra'" -ForegroundColor DarkGray
 & $VenvPy -m pip install --upgrade pip | Out-Null
+Write-Host "  [salida] pip upgrade codigo=$LASTEXITCODE" -ForegroundColor DarkGray
 & $VenvPy -m pip install -e $extra
+Write-Host "  [salida] pip install codigo=$LASTEXITCODE" -ForegroundColor DarkGray
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  pip install failed." -ForegroundColor Red
     exit 1
@@ -113,32 +124,46 @@ if ($LASTEXITCODE -ne 0) {
 
 # ---------------------------------------------------------------- Ollama
 Write-Step "Ensuring Ollama is installed"
+Write-Host "  Estado python        : $py" -ForegroundColor DarkGray
+Write-Host "  Ollama en PATH       : $((Get-Command ollama -ErrorAction SilentlyContinue) -ne $null)" -ForegroundColor DarkGray
 $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
 if (-not $ollama) {
+    $probeOllama = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
+    Write-Host "  Buscando por ruta    : $probeOllama -> $(Test-Path $probeOllama)" -ForegroundColor DarkGray
     # Already installed but not on this session's PATH? Reuse it (don't reinstall).
-    $ollama = Get-ChildItem "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -ErrorAction SilentlyContinue |
+    $ollama = Get-ChildItem $probeOllama -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
+Write-Host "  Ollama detectado     : $ollama" -ForegroundColor DarkGray
 if (-not $ollama) {
     $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
+    Write-Host "  winget disponible    : $($null -ne $winget)" -ForegroundColor DarkGray
     if ($winget) {
-        Write-Host "  Installing Ollama via winget (accept the UAC prompt if shown)..." -ForegroundColor Yellow
+        Write-Host "  [comando] winget install --id Ollama.Ollama ..." -ForegroundColor DarkGray
         winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
+        Write-Host "  [salida] winget codigo=$LASTEXITCODE" -ForegroundColor DarkGray
         $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
     }
     if (-not $ollama) {
         # No winget (or it didn't register ollama): download the official installer.
-        Write-Host "  winget not available. Downloading Ollama installer from ollama.com..." -ForegroundColor Yellow
+        Write-Host "  winget no disponible / no registró ollama. Descargando instalador oficial..." -ForegroundColor Yellow
         $installer = Join-Path $env:TEMP "OllamaSetup.exe"
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            (New-Object System.Net.WebClient).DownloadFile("https://ollama.com/download/OllamaSetup.exe", $installer)
-        } catch {
-            Write-Host "    Download failed: $($_.Exception.Message). Launch https://ollama.com/download to install Ollama, then re-run." -ForegroundColor Red
-            exit 1
+        if (-not (Test-Path $installer)) {
+            Write-Host "  [comando] descarga https://ollama.com/download/OllamaSetup.exe" -ForegroundColor DarkGray
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                (New-Object System.Net.WebClient).DownloadFile("https://ollama.com/download/OllamaSetup.exe", $installer)
+                Write-Host "  [salida] descarga completa ($((Get-Item $installer).Length) bytes)" -ForegroundColor DarkGray
+            } catch {
+                Write-Host "    Download failed: $($_.Exception.Message). Launch https://ollama.com/download to install Ollama, then re-run." -ForegroundColor Red
+                exit 1
+            }
+        } else {
+            Write-Host "  [salida] instalador ya descargado: $installer" -ForegroundColor DarkGray
         }
-        Write-Host "    Installing (this may need admin; accept any UAC prompt)..." -ForegroundColor Yellow
+        Write-Host "  [comando] $installer /VERYSILENT (instalando, acepta el UAC si sale)..." -ForegroundColor DarkGray
         $op = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT" -Wait -PassThru
+        Write-Host "  [salida] instalador Ollama exit code=$($op.ExitCode)" -ForegroundColor DarkGray
         # The installer registers ollama for new shells; refresh this session's PATH too.
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
         $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
@@ -155,20 +180,25 @@ if (-not $ollama) {
     # so the provisioning step can run `ollama` / `nova-setup` reliably.
     $ollamaDir = Split-Path -Parent $ollama
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    Write-Host "  PATH de usuario contiene Ollama: $($userPath -like "*$ollamaDir*")" -ForegroundColor DarkGray
     if ($userPath -notlike "*$ollamaDir*") {
         [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$ollamaDir", "User")
-        Write-Host "  Added Ollama to the user PATH." -ForegroundColor Green
+        Write-Host "  [accion] Added Ollama to the user PATH: $ollamaDir" -ForegroundColor Green
     }
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
 }
 # Ensure the service is running (`ollama serve` detached; best-effort).
+Write-Host "  [comando] ollama list (comprobar servidor)" -ForegroundColor DarkGray
 try {
     & $ollama list | Out-Null
+    Write-Host "  [salida] ollama list codigo=$LASTEXITCODE" -ForegroundColor DarkGray
     if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [accion] lanzando ollama serve..." -ForegroundColor DarkGray
         Start-Process -FilePath $ollama -ArgumentList "serve" -WindowStyle Hidden
         Start-Sleep -Seconds 3
     }
 } catch {
+    Write-Host "  [accion] lanzando ollama serve (por excepcion)..." -ForegroundColor DarkGray
     Start-Process -FilePath $ollama -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 3
 }
@@ -177,13 +207,19 @@ try {
 if (-not $NoSetup) {
     Write-Step "Auto-provisioning (detect machine, install models, write config)"
     $noModelsArg = if ($NoModels) { "--no-models" } else { "" }
-    & (Join-Path $Root ".venv\Scripts\nova-setup.exe") auto --config $Config $noModelsArg
+    $setupExe = Join-Path $Root ".venv\Scripts\nova-setup.exe"
+    Write-Host "  [comando] $setupExe auto --config $Config $noModelsArg" -ForegroundColor DarkGray
+    & $setupExe auto --config $Config $noModelsArg
+    Write-Host "  [salida] nova-setup auto codigo=$LASTEXITCODE" -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------- autostart
 if ($Autostart) {
     Write-Step "Enabling autostart on login"
-    & (Join-Path $Root ".venv\Scripts\nova-setup.exe") autostart --enable 1
+    $setupExe = Join-Path $Root ".venv\Scripts\nova-setup.exe"
+    Write-Host "  [comando] $setupExe autostart --enable 1" -ForegroundColor DarkGray
+    & $setupExe autostart --enable 1
+    Write-Host "  [salida] nova-setup autostart codigo=$LASTEXITCODE" -ForegroundColor DarkGray
 }
 
 Write-Step "Done."
