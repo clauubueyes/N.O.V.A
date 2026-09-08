@@ -133,7 +133,7 @@ def test_setup_pull_already_complete(tmp_path, monkeypatch) -> None:
     with _client(
         tmp_path,
         monkeypatch,
-        models=["llama3.1:8b", "llama3.2:1b", "qwen2.5-coder:7b", "nomic-embed-text"],
+        models=["llama3.1:8b", "llama3.2:1b", "qwen2.5-coder:7b", "qwen3:8b", "nomic-embed-text"],
     ) as client:
         response = client.get("/v1/setup/pull")
         assert response.status_code == 200

@@ -58,6 +58,8 @@ def _ensure_vosk_model(config: str) -> None:
 
 
 def _do_doctor() -> int:
+    from nova.setup.selector import plan_lines
+
     print("N.O.V.A. diagnostic\n" + "=" * 40)
     profile = detect_machine()
     for line in profile.summary():
@@ -73,6 +75,8 @@ def _do_doctor() -> int:
             print("Missing recommended:", ", ".join(sorted(missing)))
     else:
         print("No models installed. Run `nova setup`.")
+    for line in plan_lines(profile):
+        print(line)
     pkgs = detect_python_packages()
     print("Optional packages:")
     for name, present in pkgs.items():
@@ -149,10 +153,14 @@ def main(argv: list[str] | None = None) -> int:
             from nova.setup.assistant import _pull_models
 
             _pull_models(profile)
-        elif args.no_models:
-            print("--no-models: model download skipped.")
         else:
-            print("Ollama not running; models not pulled (run `nova setup`).")
+            from nova.setup.selector import pprint_plan
+
+            pprint_plan(profile)
+            if args.no_models:
+                print("--no-models: model download skipped.")
+            else:
+                print("Ollama not running; models not pulled (run `nova setup`).")
         return 0
     if cmd == "status":
         _do_doctor()

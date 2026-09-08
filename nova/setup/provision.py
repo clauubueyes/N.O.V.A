@@ -75,7 +75,7 @@ def _set(data: dict, key: str, value) -> bool:
 def provision_defaults(profile: MachineProfile | None = None) -> dict:
     """Build the recommended settings dict for the detected machine."""
     if profile is None:
-        profile = MachineProfile(ram_total_gb=16, cpu_count=4, gpu_vram_gb=0.0, gpu_available=False, os_name="?", python="?")
+        profile = MachineProfile(ram_total_gb=16, cpu_count=8, gpu_vram_gb=0.0, gpu_available=False, os_name="?", python="?")
     default_rec = default_model_for(profile.ram_total_gb, profile.gpu_vram_gb)
     catalog = {rec.role: rec.model for rec in recommended_models(profile.ram_total_gb, profile.gpu_vram_gb)}
 

@@ -2,20 +2,25 @@ from __future__ import annotations
 
 """Model recommendation for the detected hardware.
 
-Kept hardware-aware but deliberately conservative (ADR-013: local-first, no paid
-cloud). The installer uses these to pick a default chat model, a small model for
-light tasks, an optional coding model and the embedding model — matching the
-`llm.models` catalog the ModelRouter consumes.
+This module is the thin stable API the rest of the codebase (CLI, API, assistant)
+uses. The actual decision lives in `nova.setup.selector` + `nova.setup.catalog`,
+which combine RAM, VRAM, GPU, CPU and disk into a capability profile instead of a
+rigid RAM list (ADR-013: local-first). The functions here keep their old names so
+nothing else changes.
 """
 
+import os
 from dataclasses import dataclass
 
-#: Minimum total RAM (GB) to comfortably run an 8B chat model.
+from nova.setup.detect import MachineProfile
+
+EMBED_MODEL = "nomic-embed-text"
+
+#: Minimum total RAM (GB) to comfortably run an 8B chat model (kept as a sanity
+#: floor for the compatibility helpers below).
 _RAM_8B_GB = 12.0
 #: Minimum total RAM (GB) to also schedule a 7B coding model.
 _RAM_CODING_GB = 16.0
-
-EMBED_MODEL = "nomic-embed-text"
 
 
 @dataclass(frozen=True)
@@ -37,21 +42,27 @@ def ram_to_flags(ram_total_gb: float, gpu_vram_gb: float) -> tuple[bool, bool]:
     return can_8b, can_coding
 
 
+def _profile_from(ram_total_gb: float, gpu_vram_gb: float) -> MachineProfile:
+    return MachineProfile(
+        ram_total_gb=ram_total_gb,
+        cpu_count=os.cpu_count() or 8,
+        gpu_vram_gb=gpu_vram_gb,
+        gpu_available=gpu_vram_gb > 0.0,
+        os_name="?",
+        python="?",
+    )
+
+
 def recommended_models(ram_total_gb: float, gpu_vram_gb: float) -> list[ModelRec]:
-    """Choose the Ollama models to install for the detected hardware."""
-    can_8b, can_coding = ram_to_flags(ram_total_gb, gpu_vram_gb)
-    recs: list[ModelRec] = [
-        ModelRec("embedding", EMBED_MODEL, "memory embeddings"),
+    """Choose the Ollama models the installer should pull for this hardware."""
+    from nova.setup.selector import select_stack
+
+    stack = select_stack(_profile_from(ram_total_gb, gpu_vram_gb), check_disk=False)
+    return [
+        ModelRec(choice.role, choice.spec.name, choice.spec.description)
+        for choice in stack
+        if choice.install
     ]
-    if can_8b:
-        recs.append(ModelRec("local", "llama3.1:8b", "general chat (8B)"))
-        recs.append(ModelRec("small", "llama3.2:1b", "light/fast tasks (1B)"))
-        if can_coding:
-            recs.append(ModelRec("coding", "qwen2.5-coder:7b", "coding assistant (7B)"))
-    else:
-        recs.append(ModelRec("local", "llama3.2:3b", "general chat (3B, fits RAM)"))
-        recs.append(ModelRec("small", "llama3.2:1b", "light/fast tasks (1B)"))
-    return recs
 
 
 def default_model_for(ram_total_gb: float, gpu_vram_gb: float) -> ModelRec:

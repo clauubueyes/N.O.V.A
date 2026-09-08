@@ -94,11 +94,15 @@ def build_setup_router() -> APIRouter:
     @router.get("/status")
     def setup_status(request: Request) -> dict[str, Any]:
         _guard(request)
+        from nova.setup.selector import capability_profile, select_stack
+
         profile = detect_machine()
         st = detect_ollama()
         recs = recommended_models(profile.ram_total_gb, profile.gpu_vram_gb)
         missing = sorted(missing_models(st.models, profile.ram_total_gb, profile.gpu_vram_gb))
         default_rec = default_model_for(profile.ram_total_gb, profile.gpu_vram_gb)
+        cap = capability_profile(profile)
+        stack = select_stack(profile, check_disk=True)
         try:
             from nova.setup.autostart import autostart_status
 
@@ -110,11 +114,30 @@ def build_setup_router() -> APIRouter:
             "machine": {
                 "os": profile.os_name,
                 "python": profile.python,
+                "arch": profile.arch,
                 "cpu_count": profile.cpu_count,
+                "cpu_model": profile.cpu_model,
                 "ram_gb": round(profile.ram_total_gb, 1),
+                "ram_available_gb": round(profile.ram_available_gb, 1),
                 "gpu_vram_gb": profile.gpu_vram_gb,
                 "gpu_available": profile.gpu_available,
+                "gpu_vendor": profile.gpu_vendor,
+                "gpu_model": profile.gpu_model,
+                "gpu_accel": profile.gpu_accel,
+                "disk_free_gb": round(profile.disk_free_gb, 1),
             },
+            "capability": {"tier": cap.tier, "reasons": cap.reasons},
+            "stack": [
+                {
+                    "role": choice.role,
+                    "kind": choice.kind,
+                    "model": choice.spec.name,
+                    "state": choice.state.value,
+                    "install": choice.install,
+                    "memory_gb": round(choice.memory_gb, 1),
+                }
+                for choice in stack
+            ],
             "ollama": ollama_payload(),
             "recommended_models": [
                 {"role": rec.role, "model": rec.model, "reason": rec.reason} for rec in recs

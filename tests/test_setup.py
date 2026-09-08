@@ -175,6 +175,10 @@ def test_assistant_greeting_flag(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(A, "_ask", ask)
     monkeypatch.setattr(A, "_say", say)
+    monkeypatch.setattr(A, "_pull_models", lambda profile: [])
+    from nova.setup import autostart as autostart_mod
+
+    monkeypatch.setattr(autostart_mod, "set_autostart", lambda enabled: None)
     target = tmp_path / "config.yaml"
     result = A.run_assistant(interactive=True, config_path=target)
     assert result["greeted"] is True

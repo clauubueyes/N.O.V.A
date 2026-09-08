@@ -12,7 +12,7 @@ installed and configured — can greet and speak through N.O.V.A. itself
 from pathlib import Path
 
 from nova.setup.detect import MachineProfile, detect_machine, detect_ollama
-from nova.setup.models import default_model_for, missing_models, recommended_models
+from nova.setup.models import default_model_for, missing_models
 from nova.setup.provision import autoconfigure
 
 CONFIG_DEFAULT = Path("config/config.yaml")
@@ -56,41 +56,80 @@ def _ollama_serve(profile: MachineProfile) -> bool:
 def _pull_models(profile: MachineProfile) -> list[str]:
     import httpx
 
+    from nova.setup.detect import detect_ollama
+    from nova.setup.models import normalize_model_name
+    from nova.setup.selector import fallback_candidate, plan_lines, select_stack
+
     base = "http://localhost:11434"
-    recs = recommended_models(profile.ram_total_gb, profile.gpu_vram_gb)
+    st = detect_ollama()
+    if not st.running:
+        print("Ollama not running; models not pulled.")
+        return []
+    installed = {normalize_model_name(m) for m in st.models}
+
+    print("\nSelecting models for this machine...")
+    stack = select_stack(profile, check_disk=True)
+    for line in plan_lines(profile):
+        print(line)
+
+    targets = [c for c in stack if c.install and normalize_model_name(c.spec.name) not in installed]
     pulled: list[str] = []
+    if not targets:
+        print("\nAll recommended models already present.")
+        return pulled
+
     try:
         with httpx.Client(base_url=base, timeout=3600) as client:
-            for rec in recs:
-                name = rec.model
-                print(f"\n  Pulling {name} ({rec.reason})...")
-                try:
-                    last = ""
-                    with client.stream("POST", "/api/pull", json={"name": name, "stream": True}) as resp:
-                        resp.raise_for_status()
-                        for line in resp.iter_lines():
-                            if not line:
-                                continue
-                            import json
-
-                            try:
-                                frame = json.loads(line)
-                            except json.JSONDecodeError:
-                                continue
-                            status = frame.get("status", "")
-                            last = status
-                            if status in ("success", "error"):
-                                break
-                    if last == "success":
-                        pulled.append(name)
-                        print(f"  [ok] {name} ready")
+            for choice in targets:
+                name = choice.spec.name
+                if normalize_model_name(name) in installed:
+                    print(f"  [ok] {name} already installed")
+                    pulled.append(name)
+                    continue
+                print(f"\n  Pulling {name} ({choice.spec.description})...")
+                if _pull_one(client, name):
+                    pulled.append(name)
+                    print(f"  [ok] {name} ready")
+                    continue
+                # Fallback chain: next compatible candidate, then a smaller one.
+                fb = fallback_candidate(choice.kind, name)
+                if fb and fb.name != name:
+                    print(f"  Trying smaller fallback {fb.name} instead...")
+                    if _pull_one(client, fb.name):
+                        pulled.append(fb.name)
+                        print(f"  [ok] {fb.name} ready")
                     else:
-                        print(f"  [err] {name} failed ({last or 'unknown'})")
-                except Exception as exc:  # noqa: BLE001
-                    print(f"  [err] {name} failed: {exc}")
+                        print(f"  [err] {fb.name} failed too; skipping this optional role.")
+                else:
+                    print(f"  [err] {name} failed and no smaller fallback exists.")
     except Exception as exc:  # noqa: BLE001
         print(f"  Could not reach Ollama to pull models: {exc}")
     return pulled
+
+
+def _pull_one(client, name: str) -> bool:
+    """Stream a single `ollama pull`; True on success."""
+    import json
+
+    try:
+        last = ""
+        with client.stream("POST", "/api/pull", json={"name": name, "stream": True}) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    frame = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                status = frame.get("status", "")
+                last = status
+                if status in ("success", "error"):
+                    break
+        return last == "success"
+    except Exception as exc:  # noqa: BLE001
+        print(f"    pull error: {exc}")
+        return False
 
 
 def run_assistant(
