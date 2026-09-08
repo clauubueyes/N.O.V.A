@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 import pytest
+import yaml
 
 from nova.setup.autostart import AutostartError
 from nova.setup.detect import (
@@ -259,3 +260,26 @@ def test_ensure_ollama_not_installed(monkeypatch):
     st = D.ensure_ollama_running()
     assert st.installed is False
     assert st.started_now is False
+
+
+def test_cli_auto_voice_writes_config(tmp_path: Path, monkeypatch):
+    """`nova setup auto --voice` flips voice.enabled on and fetches the Vosk model."""
+    import nova.setup.cli as C
+
+    target = tmp_path / "config.yaml"
+    calls: list[str] = []
+
+    monkeypatch.setattr(C, "detect_machine", lambda: MachineProfile(
+        ram_total_gb=16, cpu_count=4, gpu_vram_gb=0.0, gpu_available=False, os_name="win", python="3"
+    ))
+    monkeypatch.setattr(C, "detect_ollama", lambda *a, **k: OllamaStatus(installed=True, running=True, models=["llama3.1:8b"], message="serving"))
+    monkeypatch.setattr(C, "_ensure_vosk_model", lambda cfg: calls.append(cfg))
+    monkeypatch.setattr("nova.setup.assistant._pull_models", lambda profile: calls.append("pulled"))
+
+    rc = C.main(["auto", "--voice", "--config", str(target)])
+    assert rc == 0
+    assert "pulled" in calls
+    assert str(target) in calls
+
+    data = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert data["voice"]["enabled"] is True

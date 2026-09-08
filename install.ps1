@@ -207,9 +207,10 @@ try {
 if (-not $NoSetup) {
     Write-Step "Auto-provisioning (detect machine, install models, write config)"
     $noModelsArg = if ($NoModels) { "--no-models" } else { "" }
+    $voiceArg = if ($Voice) { "--voice" } else { "" }
     $setupExe = Join-Path $Root ".venv\Scripts\nova-setup.exe"
-    Write-Host "  [comando] $setupExe auto --config $Config $noModelsArg" -ForegroundColor DarkGray
-    & $setupExe auto --config $Config $noModelsArg
+    Write-Host "  [comando] $setupExe auto --config $Config $noModelsArg $voiceArg" -ForegroundColor DarkGray
+    & $setupExe auto --config $Config $noModelsArg $voiceArg
     Write-Host "  [salida] nova-setup auto codigo=$LASTEXITCODE" -ForegroundColor DarkGray
 }
 

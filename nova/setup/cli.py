@@ -15,6 +15,48 @@ from nova.setup.detect import detect_machine, detect_ollama, detect_python_packa
 from nova.setup.models import missing_models
 
 
+def _ensure_vosk_model(config: str) -> None:
+    """If voice is enabled and stt.model_dir is unset, fetch a small Spanish Vosk
+    model so the microphone works out of the box (best-effort, ~46 MB)."""
+    import yaml
+
+    try:
+        with open(config, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except Exception:
+        return
+    voice_cfg = data.get("voice") or {}
+    if not voice_cfg.get("enabled") or voice_cfg.get("stt", {}).get("model_dir"):
+        return
+    import os
+    import subprocess
+    import urllib.request
+    import zipfile
+
+    target_dir = os.path.join(os.path.expanduser("~"), ".nova", "vosk")
+    url = "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip"
+    os.makedirs(target_dir, exist_ok=True)
+    model_dir = os.path.join(target_dir, "vosk-model-small-es-0.42")
+    if not os.path.isdir(model_dir):
+        print(f"  Downloading Vosk model for Spanish ({url})...", end="", flush=True)
+        zip_path = os.path.join(target_dir, "vosk-model-small-es-0.42.zip")
+        try:
+            urllib.request.urlretrieve(url, zip_path)
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(target_dir)
+            os.remove(zip_path)
+            print(" [ok]")
+        except Exception as exc:
+            print(f"\n  Vosk model download failed: {exc}")
+            return
+    voice_cfg.setdefault("stt", {})["model_dir"] = model_dir
+    voice_cfg["stt"]["model_dir"] = model_dir
+    data["voice"] = voice_cfg
+    with open(config, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
+    print(f"  Vosk model ready at {model_dir}")
+
+
 def _do_doctor() -> int:
     print("N.O.V.A. diagnostic\n" + "=" * 40)
     profile = detect_machine()
@@ -100,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Config ready: {report.config_path}")
         if report.changed:
             print("Wrote:", report.summary)
+        if args.voice:
+            _ensure_vosk_model(args.config)
         st = detect_ollama()
         if st.running and not args.no_models:
             from nova.setup.assistant import _pull_models
