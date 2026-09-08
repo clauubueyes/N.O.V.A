@@ -68,7 +68,7 @@ memory:
 
 api:
   # PHASE 4 — REST API + web interface (nova-api).
-  host: 127.0.0.1
+  host: 0.0.0.0
   port: 8000
   # PHASE 8 — remote access. Local-first: with `host: 127.0.0.1` you don't need a
   # token. To expose on the LAN/internet you MUST set a token (and put a TLS
