@@ -145,6 +145,16 @@ if (-not $ollama) {
             exit 1
         }
     }
+    # Make sure Ollama's folder is in the user PATH permanently (the installer
+    # sometimes only registers it for new shells) and refresh this session too,
+    # so the provisioning step can run `ollama` / `nova-setup` reliably.
+    $ollamaDir = Split-Path -Parent $ollama
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$ollamaDir*") {
+        [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$ollamaDir", "User")
+        Write-Host "  Added Ollama to the user PATH." -ForegroundColor Green
+    }
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
 }
 # Ensure the service is running (`ollama serve` detached; best-effort).
 try {
