@@ -1,8 +1,8 @@
 <#
 N.O.V.A. one-click installer (Windows PowerShell).
 ====================================================================
-Installs everything for a ready-to-chat JARVIS-style assistant:
-  1. Installs Python 3.12 via winget if missing.
+Installs everything for a ready-to-chat JARVIS-style assistant (no prerequisites):
+  1. Installs Python 3.12 from python.org (per-user, with PATH) if missing.
   2. Creates a virtualenv (.venv) if missing.
   3. Installs the package (+ dev extras, and voice when requested).
   4. Ensures Ollama is installed (winget) and running.
@@ -33,33 +33,70 @@ Set-Location $Root
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
 # ---------------------------------------------------------------- Python
+# Fully self-contained: if Python is missing we download and install it from
+# python.org directly (win-bootstrap). This works even with no winget installed.
+function Find-Python {
+    $c = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+    if ($c) { return $c }
+    $probe = @(
+        "$env:LOCALAPPDATA\Programs\Python",
+        "$env:ProgramFiles\Python"
+    )
+    foreach ($base in $probe) {
+        if (Test-Path $base) {
+            $exe = Get-ChildItem "$base\Python*\python.exe" -ErrorAction SilentlyContinue |
+                Sort-Object { [version]($_.Directory.Name -replace 'Python','') } -Descending |
+                Select-Object -First 1 -ExpandProperty FullName
+            if ($exe) { return $exe }
+        }
+    }
+    return $null
+}
+
 Write-Step "Checking Python 3.11+"
-$py = (Get-Command python -ErrorAction SilentlyContinue).Source
+$py = Find-Python
 if (-not $py) {
-    Write-Host "  Python not found. Installing Python 3.12 automatically (accept the UAC prompt if shown)..." -ForegroundColor Yellow
-    winget install --id Python.Python.3.12 -e --scope user --silent --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Could not install Python automatically. Install it from https://www.python.org/downloads (tick 'Add to PATH') and re-run." -ForegroundColor Red
+    Write-Host "  Python not found. Downloading and installing Python 3.12 automatically..." -ForegroundColor Yellow
+    $installer = Join-Path $env:TEMP "python-3.12.10-amd64.exe"
+    if (-not (Test-Path $installer)) {
+        Write-Host "    Downloading https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe ..."
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            (New-Object System.Net.WebClient).DownloadFile(
+                "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe", $installer)
+        } catch {
+            Write-Host "    Download failed: $($_.Exception.Message). Install manually from https://www.python.org/downloads" -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "    Installing (user scope). This may take a minute..." -ForegroundColor Yellow
+    $env:PYTHONUTF8 = "1"
+    $proc = Start-Process -FilePath $installer -ArgumentList `
+        "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=1" `
+        -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        Write-Host "    Python installer exited with code $($proc.ExitCode). Install manually from https://www.python.org/downloads" -ForegroundColor Red
         exit 1
     }
-    # Refresh the PATH for this session (winget/installer adds it for new shells only).
+    # The per-user installer registers the PATH for future shells; refresh this session.
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-    $py = (Get-Command python -ErrorAction SilentlyContinue).Source
+    $py = Find-Python
 }
 if (-not $py) {
     Write-Host "  Python installed but not on PATH for this session. Close and reopen PowerShell, then re-run." -ForegroundColor Yellow
     exit 1
 }
-& python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
+& $py -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Python >= 3.11 required." -ForegroundColor Yellow
     exit 1
 }
+Write-Host "  Using Python: $py"
 
 # ---------------------------------------------------------------- venv
 Write-Step "Creating virtualenv (.venv)"
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    & python -m venv .venv
+    & $py -m venv .venv
     if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 $VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
