@@ -115,6 +115,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Step "Ensuring Ollama is installed"
 $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
 if (-not $ollama) {
+    # Already installed but not on this session's PATH? Reuse it (don't reinstall).
+    $ollama = Get-ChildItem "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $ollama) {
     $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
     if ($winget) {
         Write-Host "  Installing Ollama via winget (accept the UAC prompt if shown)..." -ForegroundColor Yellow
