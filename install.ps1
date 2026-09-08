@@ -5,7 +5,7 @@ Installs everything for a ready-to-chat JARVIS-style assistant (no prerequisites
   1. Installs Python 3.12 from python.org (per-user, with PATH) if missing.
   2. Creates a virtualenv (.venv) if missing.
   3. Installs the package (+ dev extras, and voice when requested).
-  4. Ensures Ollama is installed (winget) and running.
+  4. Ensures Ollama is installed (winget, or direct installer when there is none) and running.
   5. Runs `nova-setup auto`: detects machine -> installs suitable models
      -> writes a safe config.yaml.
   6. Optionally enables autostart (nova-agent on login).
@@ -115,24 +115,46 @@ if ($LASTEXITCODE -ne 0) {
 Write-Step "Ensuring Ollama is installed"
 $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
 if (-not $ollama) {
-    Write-Host "  Installing Ollama via winget (accept the UAC prompt if shown)..." -ForegroundColor Yellow
-    winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
-    $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+    $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
+    if ($winget) {
+        Write-Host "  Installing Ollama via winget (accept the UAC prompt if shown)..." -ForegroundColor Yellow
+        winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
+        $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+    }
     if (-not $ollama) {
-        Write-Host "  Ollama install did not add to PATH. Start 'Ollama' once from the Start Menu, then re-run." -ForegroundColor Yellow
-        Start-Process "https://ollama.com/download"
-        exit 1
+        # No winget (or it didn't register ollama): download the official installer.
+        Write-Host "  winget not available. Downloading Ollama installer from ollama.com..." -ForegroundColor Yellow
+        $installer = Join-Path $env:TEMP "OllamaSetup.exe"
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            (New-Object System.Net.WebClient).DownloadFile("https://ollama.com/download/OllamaSetup.exe", $installer)
+        } catch {
+            Write-Host "    Download failed: $($_.Exception.Message). Launch https://ollama.com/download to install Ollama, then re-run." -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "    Installing (this may need admin; accept any UAC prompt)..." -ForegroundColor Yellow
+        $op = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT" -Wait -PassThru
+        # The installer registers ollama for new shells; refresh this session's PATH too.
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+        if (-not $ollama) {
+            $ollama = Get-ChildItem "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+        }
+        if (-not $ollama) {
+            Write-Host "  Ollama not found on PATH. Start 'Ollama' once from the Start Menu, then re-run." -ForegroundColor Yellow
+            exit 1
+        }
     }
 }
-# Ensure the service is running (the app daemon usually is; `ollama serve` otherwise).
+# Ensure the service is running (`ollama serve` detached; best-effort).
 try {
-    & ollama list | Out-Null
+    & $ollama list | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+        Start-Process -FilePath $ollama -ArgumentList "serve" -WindowStyle Hidden
         Start-Sleep -Seconds 3
     }
 } catch {
-    Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+    Start-Process -FilePath $ollama -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 3
 }
 
