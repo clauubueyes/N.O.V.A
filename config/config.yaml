@@ -1,199 +1,81 @@
-# N.O.V.A. configuration
-# Edit this file or override any value with environment variables:
-#   NOVA_LLM_DEFAULT_MODEL=llama3.1:8b
-#   NOVA_LOGGING_LEVEL=DEBUG
-# Model names are configured here, never hardcoded in code.
-
 llm:
   provider: ollama
   base_url: http://localhost:11434
   default_model: llama3.1:8b
-  # Model used for embeddings (PHASE 3 — Memory). Pull it with: ollama pull nomic-embed-text
   embedding_model: nomic-embed-text
   temperature: 0.7
   timeout_s: 60.0
-  # PHASE 7 — Model catalog used by the ModelRouter. Each role maps to a model
-  # name. Roles left empty fall back to `default_model`. Pull the ones you want:
-  #   ollama pull llama3.2:1b      (small)
-  #   ollama pull qwen2.5-coder:7b (coding)
-  #   ollama pull llama3.2-vision  (vision)
   models:
     small: llama3.2:1b
     local: llama3.1:8b
     coding: qwen2.5-coder:7b
-    vision: ""
+    vision: ''
     embedding: nomic-embed-text
-
 model_router:
-  # PHASE 7 — routing policy: when the active RAM / battery is below these
-  # thresholds the router downshifts heavy/coding tasks to the `small` model.
   min_ram_gb: 8.0
   battery: true
-  # ADR-013: clouds are never used unless explicitly enabled by the user.
   cloud_enabled: false
-
 logging:
   level: INFO
   file: logs/nova.log
-
 session:
   max_history_messages: 20
-  system_prompt: >
-    You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal AI
-    assistant running locally. Be concise, precise and helpful.
+  system_prompt: 'You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal
+    AI assistant running locally. Be concise, precise and helpful.
 
+    '
 permissions:
-  # autonomy: off | ask | full
-  #   off  -> only tools listed in `allow` may run (everything else denied)
-  #   ask  -> tools in `allow` run directly, `deny` is blocked, the rest ask
-  #   full -> everything not denied runs directly
   autonomy: ask
   allow:
-    - date_time
-    - calculate
+  - date_time
+  - calculate
   deny: []
-
 audit:
-  # Every tool execution decision is recorded here (JSON lines, rotated).
   file: logs/audit.nova.jsonl
-
 memory:
-  # PHASE 3 — Persistent memory (local SQLite, no external DB).
   db_file: memory/nova.db
   session_id: default
-  # How many relevant memories/past messages to inject as context in the chat.
   max_context: 3
-  # Minimum cosine similarity for a memory to be considered relevant.
   similarity_threshold: 0.3
-
 api:
-  # PHASE 4 — REST API + web interface (nova-api).
   host: 0.0.0.0
   port: 8000
-  # PHASE 8 — remote access. Local-first: with `host: 127.0.0.1` you don't need a
-  # token. To expose on the LAN/internet you MUST set a token (and put a TLS
-  # reverse proxy in front; never expose the API plaintext).
-  #
-  #   token: ""
-  #
-  # Exposing the Desktop Agent host tools through the API (mobile -> API -> host).
-  # REFUSES TO START without a token — never enable without one:
-  #
-  #   host_enabled: true
-  #
-  # Origins allowed to call the API from a separately-hosted frontend:
-  #   cors_origins: "*"
-
 host:
-  # PHASE 6 — Desktop Agent host tools. Denied by default: these tools only run
-  # when the base command/app name is configured here AND the tool itself is
-  # allowed (permissions.allow) / confirmed when autonomy=ask.
-  #
-  # open_app: launches a configured executable by name. The LLM only ever
-  #   provides the name — never an arbitrary path. Map the name to a path or a
-  #   plain program name found on PATH:
   apps:
     notepad: notepad.exe
-    # chrome: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-  #
-  # run: allowlist of base commands that may execute (empty list = nothing runs).
-  #   Destination/elevation commands (runas, sudo, powershell, cmd, format, ...)
-  #   are always blocked. Output is captured with a timeout; no shell is used.
   commands: []
-    # - echo
-    # - git
-    # - where
-  # PHASE 6 paso 2 — FileSystem bounds. root activo o vacíos: con roots vacía
-  #   NO hay acceso a archivos (read_file/write_file/list_files fallan) y `run`
-  #   no puede fijar cwd. Cada ruta que toque una host tool DEBE resolver dentro
-  #   de uno de estos roots (paths absolutos, con o sin variables de entorno).
   roots: []
-    # - "%USERPROFILE%\\Documents"
   working_dir: null
   timeout_s: 30.0
-
 web:
-  # PHASE 9 — Web Tools. OFF by default: with enabled: false nothing is registered.
-  # The LLM reaches the Internet ONLY through these tools (never direct network
-  # access). Each call still goes through the Permission System (denied by
-  # default; add the tool names under `permissions.allow` to use them).
   enabled: false
-  # user_agent: polite, identifiable client for "whom are you?" robots checks
-  user_agent: "NOVA/1.0 (N.O.V.A. local personal assistant)"
-  # Per-request and per-host limits (robots + ToS + rate limiting).
+  user_agent: NOVA/1.0 (N.O.V.A. local personal assistant)
   timeout_s: 12.0
   max_redirects: 5
-  max_bytes: 1000000          # Hard cap on the downloaded body
-  max_chars: 4000             # Text returned to the LLM per page
-  respect_robots: true        # Respect robots.txt Disallow rules
-  min_delay_s: 1.0            # Minimum time between requests to the same host
-  # Search endpoint: a {query} template. Default is DuckDuckGo HTML (no API key).
-  # For production consider a self-hosted SearXNG or the Brave Search API (free
-  # tier) and set search_url accordingly; the LLM keeps the same tool interface.
-  search_url: "https://html.duckduckgo.com/html/?q={query}"
+  max_bytes: 1000000
+  max_chars: 4000
+  respect_robots: true
+  min_delay_s: 1.0
+  search_url: https://html.duckduckgo.com/html/?q={query}
   search_max: 5
-
 voice:
-  # PHASE 10 — Voice (STT/TTS local, sin APIs de pago). OFF by default.
-  #   enabled: true habilita los backends de voz en el CLI (/voice para el bucle
-  #   STT -> chat -> TTS, /say <texto> para hablar una línea).
-  # STT: vosk (offline). Descarga un modelo pequeño y apunta model_dir a él, p. ej.:
-  #   https://alphacephei.com/vosk/models -> vosk-model-small-es-0.42 (es)
-  enabled: false
+  enabled: true
   stt:
     backend: vosk
-    model_dir: null          # ruta a la carpeta del modelo Vosk (obligatoria)
+    model_dir: C:\Users\Claudia-Everlasting\.nova\vosk\vosk-model-small-es-0.42
     language: es
   tts:
-    backend: pyttsx3         # voces del sistema (Windows SAPI5 / eSpeak), offline
-    voice: null              # nombre de voz opcional (engine setProperty "voice")
-    rate: 180                # velocidad de habla
-  # Wake word opcional: solo reacciona a mensajes que EMPIEZAN por esta palabra
-  # (comparación por defecto case-insensitive sobre el transcript). p.ej. "nova".
+    backend: pyttsx3
+    voice: null
+    rate: 180
   wake_word: null
-  # device: null             # índice o nombre del dispositivo de entrada (sounddevice)
-
 plugins:
-  # PHASE 11 — Plugins. OFF by default: with an empty list nothing is loaded.
-  # Built-in plugins enabled by name (each adds tools under the same Permission
-  # System + audit). Available built-ins: text_tools, units.
-  enabled: []
-    # - text_tools
-    # - units
-  # Optional: scan a folder for custom `*_plugin.py` modules that expose a
-  # `PLUGIN` object (a nova.plugins.Plugin instance). Empty = no dir scan.
+  enabled:
+  - text_tools
+  - units
   dir: null
-
 automation:
-  # PHASE 12 — Scheduler + workflows. OFF by default. When enabled, the scheduler
-  # runs in a background thread (CLI, nova-agent, API) and fires tasks on their
-  # schedule. Tools called by a task/workflow follow `permissions`: with
-  # autonomy=ask an unattended `ask` is DENIED (no human to confirm), so add the
-  # tools you want automated to `permissions.allow`.
   enabled: false
   poll_s: 1.0
   tasks: []
-    # - name: daily_summary
-    #   description: "Daily reminder"
-    #   schedule:
-    #     # Either interval_s (every N seconds) or at ("HH:MM" local time).
-    #     interval_s: 0
-    #     at: "09:00"
-    #   # Action: a tool call, an agent turn, or (mutually exclusive) a workflow.
-    #   # tool: date_time
-    #   # args: {}
-    #   # agent: general
-    #   # text: "What is the date today?"
-    #   # workflow: my_workflow
   workflows: []
-    # - name: my_workflow
-    #   description: "Example multi-step workflow"
-    #   steps:
-    #     - tool: date_time
-    #       args: {}
-    #     - agent: general
-    #       text: "Summarize the current time and date."
-    # on_error: stop (default) or continue, per step:
-    #     - tool: date_time
-    #       args: {}
-    #       on_error: continue
