@@ -59,6 +59,17 @@ instalada, el asistente puede saludarte por TTS al terminar ("Bienvenido, señor
 Dentro del chat también tienes `/setup` (lanzar el asistente interactivo), `/doctor`
 y su alias `/status` para diagnosticar sin salir.
 
+### Instalar desde la web
+
+Cuando `nova-api` está corriendo en tu máquina, la interfaz web (estilo ChatGPT, en
+`web/`) incluye el asistente **"Instalar N.O.V.A."** que hace lo mismo que el wizard CLI:
+detecta el equipo, activa/desactiva plugins/voice/web/automation/autostart, escribe
+`config/config.yaml` (sin tocar valores que ya tengas) y descarga los modelos que falten
+con barra de progreso en vivo (SSE). Endpoints: `GET /v1/setup/status`,
+`POST /v1/setup/provision`, `GET /v1/setup/pull`, `POST /v1/setup/autostart`,
+`POST /v1/setup/greeting`. Estas rutas escriben en el host, así que si la API escucha fuera
+de localhost requieren `api.token` (403 en caso contrario).
+
 ### Manual
 
 Desde la raíz del proyecto:
@@ -254,12 +265,15 @@ api:
 
 ### Hosting estático (frontend en Vercel/Netlify/github.io, backend local)
 
-El frontend es un **cliente estático**: el LLM, la memoria y las tools viven en tu ordenador,
-nunca en serverless. Sirve la carpeta `nova/api/static/` en tu hosting y añade el origen a la API:
+El frontend es un **cliente estático** (carpeta `web/`, sin build) : el LLM, la memoria y
+las tools viven en tu ordenador, nunca en serverless. Despliega la carpeta `web/` en tu
+hosting y añade tu origen a la API:
 
-1. En el hosting configura el variable que prefieras para la URL de tu PC (`https://<tunel>.dominio` o `http://IP:8000`).
+1. Pack: `web/` contiene `index.html`, `style.css` y `app.js`. En Vercel basta con el
+   `vercel.json` del repo (`"rootDirectory": "web"`, sin framework) e importar el repo.
 2. En `config/config.yaml`: `api.cors_origins` con tu dominio (p. ej. `https://nova-app.vercel.app`) y `api.token` con un secreto.
 3. Abre la web publicada con `?api=<url-de-tu-pc>` (o usa `localStorage.setItem("nova.apiBase", ...)`); introduce el token en el campo del encabezado.
+4. La API local sirve la misma UI en `/` (así también funciona sin desplegar nada).
 
 > ⚠️ **Internet sin TLS = jamás.** Si expones el puerto a la WAN, pon delante un proxy reverso con
 > TLS (Caddy/nginx/Cloudflare); el token va en un header y sin TLS se esnifa. Detalles y ejemplos en

@@ -2,6 +2,44 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.13.0] - 2026-09-08
+
+### Añadido — PHASE 13: Setup / Instalador (wizard JARVIS + one-click + instalador web)
+
+- **`nova-setup` CLI** (`nova/setup/cli.py`): instalación por línea de órdenes con `nova-setup auto`
+  (detecta el equipo, provisiona una config segura y descarga los modelos recomendados sin prompts),
+  `--no-models` para saltar la descarga, y modo interactivo. Asistente **JARVIS**
+  (`nova/setup/assistant.py`): `run_assistant` saluda por voz (TTS local `pyttsx3`, best-effort y
+  silencioso si no hay TTS disponible) y escribe config de forma no destructiva.
+- **Detección de la máquina** (`nova/setup/detect.py`): `detect_machine` (SO, RAM, VRAM/GPU),
+  `detect_ollama` (instalado / escuchando / modelos presentes) y `detect_python_packages`;
+  recomendación de modelos según recursos con `models.recommended_models` / `missing_models`.
+- **Arranque automático de Ollama** (`detect.ensure_ollama_running`): fast-path por HTTP; si Ollama no
+  responde lo lanza (`ollama serve`, detached, `CREATE_NO_WINDOW`) y espera a que escuche
+  (`started_now`). Integrado en CLI, `nova-api` y `nova-agent` — «no hace falta encender Ollama antes».
+- **Provision no destructivo** (`nova/setup/provision.py`): `autoconfigure` rellena solo lo que falta
+  (plugins seguros `text_tools`/`units` ON, voz/web/automation OFF, host restringido) y **nunca pisa
+  valores que ya existan**.
+- **Instaladores one-click**: `install.ps1` (Windows) e `install.sh` (Linux/macOS) crean el venv,
+  instalan el paquete y opcionalmente los modelos (`-NoModels` / `--no-models`).
+- **Autostart** (`nova/setup/autostart.py`): alta/ baja de N.O.V.A. como aplicación de arranque del SO
+  (Windows `shell:startup`, Linux `~/.config/autostart`) con `AutostartError` acotado.
+- **Comandos en el chat**: `/setup` (wizard interactivo), `/doctor` y su alias `/status`.
+- **Instalador desde la web** (`nova/api/setup.py`): `GET /v1/setup/status` (máquina + Ollama + modelos
+  faltantes + config), `POST /v1/setup/provision`, `GET /v1/setup/pull` (descarga de modelos con
+  progreso por **SSE**), `POST /v1/setup/autostart` y `POST /v1/setup/greeting` (saludo JARVIS).
+  Nuevo `GET /v1/sessions` para listar conversaciones. Guarda defensiva: las rutas de instalación
+  escriben en el host, así que exigen `api.token` si la API escucha fuera de loopback (403).
+- **Frontend estilo ChatGPT** (`web/`): `index.html` + `style.css` + `app.js` (sin build) con sidebar
+  de conversaciones, chat, indicador de estado y el asistente **"Instalar N.O.V.A."** (detecta,
+  provisiona y descarga modelos con barras de progreso). La API lo sirve en `/`
+  (`app._resolve_static_dir`, preferencia `web/` con fallback a `nova/api/static/`) desplegable en
+  Vercel con `vercel.json` (`"rootDirectory": "web"`, sin framework).
+- **Tests**: `tests/test_setup.py` (19) + `tests/test_api_setup.py` (8; provision nunca sobreescribe,
+  guard 403 remoto, SSE con puller fake, autostart, greeting). Total: **299** (270 previos + 29).
+- **Docs**: `docs/setup.md` (one-click, manual de `nova-setup`, instalador web y hosting estático
+  Vercel), `docs/roadmap.md` (PHASE 13 ✅), `docs/api.md`, `README.md`. Versión: **0.13.0**.
+
 ## [0.12.0] - 2026-09-07
 
 ### Añadido — PHASE 12: Automatización (scheduler + workflows)

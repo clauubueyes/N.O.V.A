@@ -233,7 +233,13 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
   Ollama responde y, si no, lanzan `ollama serve` en segundo plano antes de conectar
   (`ensure_ollama_running` en `nova/setup/detect.py`).
 - [x] **`/status` en el chat**: alias de `/doctor` para diagnóstico rápido.
-- [x] Tests dedicados (`tests/test_setup.py`, 19). Total: **291** (272 previos + 19), warnings fastapi.
+- [x] **Instalador desde la web**: endpoints `/v1/setup/*` (status, provision, pull con
+  progreso SSE, autostart, saludo JARVIS) y `GET /v1/sessions` para el listado de conciencias.
+- [x] **Frontend estilo ChatGPT**: `web/` (index.html + style.css + app.js, sin build) con
+  sidebar de conversaciones, chat y asistente de instalación. La API lo sirve en `/`
+  (`_resolve_static_dir`) y es desplegable en Vercel con `vercel.json` (`rootDirectory: web`).
+- [x] Tests dedicados (`tests/test_setup.py`, 19 + `tests/test_api_setup.py`, 8). Total: **299**
+  (272 previos + 27), warnings fastapi.
 - [ ] (Fuera de alcance acordado) Añadir presets de plugins concretos (spotify/vscode/home-assistant).
 
 > El instalador es una capa de confort, no un bypass: los defaults que genera pasan por el mismo

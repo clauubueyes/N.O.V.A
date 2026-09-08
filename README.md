@@ -280,8 +280,9 @@ nova/
   memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
   agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
   desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)
-  api/               API REST (FastAPI) + interfaz web (PHASE 4; auth + remoto en PHASE 8)
+  api/               API REST (FastAPI) + endpoints de instalación /v1/setup + /v1/sessions (PHASE 4, 8)
   cli/               Interfaz de conversación
+web/                 Frontend estilo ChatGPT desplegable en Vercel (sin build) + vercel.json (PHASE 13)
 docs/                Documentación del proyecto
 tests/               Tests pytest
 ```

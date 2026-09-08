@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N.O.V.A. — Neural Operations &amp; Virtual Assistant</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar" id="sidebar">
+    <button class="btn-new" id="btn-new" type="button">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M7.5 1.5v6h6v1h-6v6h-1v-6h-6v-1h6v-6h1z"/></svg>
+      Nueva conversación
+    </button>
+
+    <nav class="conv-list" id="conv-list" aria-label="Conversaciones"></nav>
+
+    <div class="sidebar-foot">
+      <button class="foot-btn" id="btn-install" type="button">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM4 8h3V4h2v4h3L8 11 4 8z"/></svg>
+        Instalar N.O.V.A.
+      </button>
+      <span class="foot-model" id="foot-status">conectando...</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <span class="dot" id="dot"></span>
+      <span class="top-model" id="top-model">N.O.V.A.</span>
+      <select id="agent" class="pick" title="Agente (las tools las decide el modelo)">
+        <option value="">Chat normal</option>
+      </select>
+      <select id="model" class="pick" title="Modelo (por defecto: router automático)">
+        <option value="">modelo automático</option>
+      </select>
+      <input id="token-input" class="pick pick-input" type="password" placeholder="token API" autocomplete="off">
+      <button class="ghost" id="btn-tools" type="button" title="Herramientas">tools</button>
+    </header>
+
+    <div class="stage">
+      <section class="log" id="log"></section>
+
+      <section class="hero" id="hero">
+        <div class="hero-title">¿En qué puedo ayudarte?</div>
+        <div class="hero-sub" id="hero-sub">Conecta con tu servidor N.O.V.A. local o pulsa "Instalar N.O.V.A." para configurarlo.</div>
+      </section>
+
+      <form class="composer" id="compose">
+        <input id="input" class="composer-input" placeholder="Envía un mensaje a N.O.V.A. (/) para comandos" autocomplete="off">
+        <button class="composer-send" id="send" type="submit" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 20.5 22 12 3 3.5 3 10l13.5 2L3 14z"/></svg>
+        </button>
+      </form>
+    </div>
+  </main>
+</div>
+
+<div class="overlay hidden" id="wizard">
+  <div class="wizard">
+    <header class="wizard-head">
+      <div>
+        <h2>Instalar N.O.V.A.</h2>
+        <p id="wiz-machine">Detectando tu máquina...</p>
+      </div>
+      <button class="ghost" id="wiz-close" type="button" title="Cerrar">cerrar</button>
+    </header>
+
+    <div class="wizard-body">
+      <section class="card" id="card-connection">
+        <h3>1. Conexión y equipo</h3>
+        <div class="rows" id="rows-connection"><p class="dim">cargando estado...</p></div>
+      </section>
+
+      <section class="card" id="card-config">
+        <h3>2. Configuración segura</h3>
+        <p class="dim">Escribe <code>config/config.yaml</code> sin tocar tus valores existentes. Todo apagado por defecto; activa lo que quieras.</p>
+        <label class="switch"><input type="checkbox" id="opt-plugins" checked><span>Plugins seguros (text_tools, units)</span></label>
+        <label class="switch"><input type="checkbox" id="opt-web"><span>Web tools (navegación controlada)</span></label>
+        <label class="switch"><input type="checkbox" id="opt-voice"><span>Voz local (requiere el extra instalado)</span></label>
+        <label class="switch"><input type="checkbox" id="opt-automation"><span>Automatización (tareas y workflows)</span></label>
+        <label class="switch"><input type="checkbox" id="opt-autostart"><span>Arrancar N.O.V.A. al iniciar sesión</span></label>
+        <div class="card-actions">
+          <button class="primary" id="btn-provision" type="button">Guardar configuración</button>
+        </div>
+      </section>
+
+      <section class="card" id="card-models">
+        <h3>3. Modelos locales</h3>
+        <div class="rows" id="rows-models"><p class="dim">cargando modelos...</p></div>
+        <div class="card-actions">
+          <button class="primary" id="btn-pull-all" type="button" disabled>Descargar modelos que faltan</button>
+          <button class="ghost" id="btn-greet" type="button" title="Prueba el TTS local">Salúdame, JARVIS</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

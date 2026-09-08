@@ -51,7 +51,16 @@ from nova.tools.runner import ToolRunner
 from nova.tools.web import all_web_tools
 
 logger = get_logger("api.app")
-_STATIC_DIR = Path(__file__).parent / "static"
+def _resolve_static_dir() -> Path:
+    """Serve the deployed ChatGPT-style UI from `web/` (repo root) when present,
+    falling back to the bundled package UI for wheel installs."""
+    repo_web = Path(__file__).resolve().parent.parent.parent / "web"
+    if (repo_web / "index.html").exists():
+        return repo_web
+    return Path(__file__).parent / "static"
+
+
+_STATIC_DIR = _resolve_static_dir()
 
 
 @dataclass
@@ -217,6 +226,10 @@ def create_app(
     )
     app.middleware("http")(_auth_middleware(settings))
     app.state.nova = state
+
+    from nova.api.setup import build_setup_router
+
+    app.include_router(build_setup_router())
 
     def build_session(session_id: str, agent_name: str | None = None) -> SessionEntry:
         session = ChatSession(
@@ -405,6 +418,20 @@ def create_app(
             usage=response.usage,
         )
 
+    @app.get("/v1/sessions")
+    def list_sessions() -> list[dict[str, Any]]:
+        rows = []
+        for sid, entry in state.sessions.items():
+            rows.append(
+                {
+                    "session_id": sid,
+                    "agent": entry.agent.name if entry.agent is not None else "",
+                    "model": entry.model,
+                    "messages": len(entry.session.messages()),
+                }
+            )
+        return rows
+
     @app.post("/v1/sessions", response_model=SessionCreateResponse)
     def create_session(req: SessionCreateRequest | None = None) -> SessionCreateResponse:
         req = req or SessionCreateRequest()
@@ -524,4 +551,8 @@ def create_app(
         }
 
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+    # Serve the web assets (style.css, app.js, ...) at the root too, so the UI
+    # works with relative paths both locally and on static hosting. API routes
+    # are registered before this mount, so /v1/* and /healthz win.
+    app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static_root")
     return app
