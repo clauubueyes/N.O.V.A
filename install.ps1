@@ -2,12 +2,13 @@
 N.O.V.A. one-click installer (Windows PowerShell).
 ====================================================================
 Installs everything for a ready-to-chat JARVIS-style assistant:
-  1. Creates a virtualenv (.venv) if missing.
-  2. Installs the package (+ dev extras, and voice when requested).
-  3. Ensures Ollama is installed (winget) and running.
-  4. Runs `nova-setup auto`: detects machine -> installs suitable models
+  1. Installs Python 3.12 via winget if missing.
+  2. Creates a virtualenv (.venv) if missing.
+  3. Installs the package (+ dev extras, and voice when requested).
+  4. Ensures Ollama is installed (winget) and running.
+  5. Runs `nova-setup auto`: detects machine -> installs suitable models
      -> writes a safe config.yaml.
-  5. Optionally enables autostart (nova-agent on login).
+  6. Optionally enables autostart (nova-agent on login).
 
 Usage:
   .\install.ps1                 # base install
@@ -35,7 +36,18 @@ function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 Write-Step "Checking Python 3.11+"
 $py = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $py) {
-    Write-Host "  Python not found. Install from https://www.python.org/downloads (tick 'Add to PATH')." -ForegroundColor Yellow
+    Write-Host "  Python not found. Installing Python 3.12 automatically (accept the UAC prompt if shown)..." -ForegroundColor Yellow
+    winget install --id Python.Python.3.12 -e --scope user --silent --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  Could not install Python automatically. Install it from https://www.python.org/downloads (tick 'Add to PATH') and re-run." -ForegroundColor Red
+        exit 1
+    }
+    # Refresh the PATH for this session (winget/installer adds it for new shells only).
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $py = (Get-Command python -ErrorAction SilentlyContinue).Source
+}
+if (-not $py) {
+    Write-Host "  Python installed but not on PATH for this session. Close and reopen PowerShell, then re-run." -ForegroundColor Yellow
     exit 1
 }
 & python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
