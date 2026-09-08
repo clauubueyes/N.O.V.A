@@ -1,5 +1,14 @@
 # Setup
 
+## Mantenimiento local
+
+`nova-setup install`, `nova-setup update` y `nova-setup remove` gestionan el ciclo
+de vida de la instalación. Los instaladores nuevos crean el entorno en
+`%LOCALAPPDATA%\NOVA\venv` (Windows) o en el directorio de datos de usuario
+equivalente. `.venv` sigue siendo el entorno de desarrollo del repositorio.
+Consulta [lifecycle.md](lifecycle.md) para comandos, propiedad, catálogo remoto,
+confirmaciones, rutas y conservación de instalaciones antiguas.
+
 ## Requisitos
 
 - **Python** 3.11+ (verificado: 3.11.9).

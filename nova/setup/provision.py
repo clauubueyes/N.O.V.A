@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nova.setup.detect import MachineProfile
-from nova.setup.models import EMBED_MODEL, default_model_for, recommended_models
+from nova.setup.models import EMBED_MODEL, recommended_models
+from nova.setup.state import exclusive
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -76,14 +77,15 @@ def provision_defaults(profile: MachineProfile | None = None) -> dict:
     """Build the recommended settings dict for the detected machine."""
     if profile is None:
         profile = MachineProfile(ram_total_gb=16, cpu_count=8, gpu_vram_gb=0.0, gpu_available=False, os_name="?", python="?")
-    default_rec = default_model_for(profile.ram_total_gb, profile.gpu_vram_gb)
-    catalog = {rec.role: rec.model for rec in recommended_models(profile.ram_total_gb, profile.gpu_vram_gb)}
+    from nova.setup.selector import select_stack
+
+    catalog = {choice.role: choice.spec.name for choice in select_stack(profile) if choice.install}
 
     data: dict = {}
     data["llm"] = {
         "provider": "ollama",
         "base_url": "http://localhost:11434",
-        "default_model": default_rec.model,
+        "default_model": catalog.get("local", ""),
         "embedding_model": EMBED_MODEL,
         "temperature": 0.7,
         "timeout_s": 60.0,
@@ -109,6 +111,7 @@ def ensure_config(path: str | Path = CONFIG_PATH) -> tuple[Path, bool]:
     return path, False
 
 
+@exclusive
 def autoconfigure(
     profile: MachineProfile | None = None,
     path: str | Path = CONFIG_PATH,
@@ -123,9 +126,24 @@ def autoconfigure(
     (voice/web/plugins/automation) only when explicitly requested by the wizard.
     """
     path = Path(path)
+    from nova.setup.state import StateStore
+
+    store = StateStore()
+    store.load()
     created = ensure_config(path)[1]
     data = _load_yaml(path)
     defaults = provision_defaults(profile)
+    from nova.core.paths import installation_home
+
+    if path.resolve().is_relative_to(installation_home()):
+        for folder in ("data", "logs", "cache"):
+            directory = installation_home() / folder
+            if not directory.exists():
+                directory.mkdir(parents=True)
+                store.record_resource(directory, "cache" if folder == "cache" else "data")
+        defaults["memory"] = {"db_file": str(installation_home() / "data" / "nova.db")}
+        defaults["logging"] = {"file": str(installation_home() / "logs" / "nova.log")}
+        defaults["audit"] = {"file": str(installation_home() / "logs" / "audit.nova.jsonl")}
 
     changed: list[str] = []
     for section, value in defaults.items():
@@ -148,6 +166,16 @@ def autoconfigure(
             changed.append(f"{section}.enabled")
 
     _write_yaml(path, data)
+    if created:
+        store.record_resource(path, "config")
+    def record(state):
+        from dataclasses import asdict
+
+        state.config_path = str(path.resolve())
+        state.stack = data.get("llm", {}).get("models", {})
+        if profile is not None:
+            state.hardware = asdict(profile)
+    store.change(record)
     model_names = [rec.model for rec in recommended_models(
         (profile.ram_total_gb if profile else 16.0),
         (profile.gpu_vram_gb if profile else 0.0),

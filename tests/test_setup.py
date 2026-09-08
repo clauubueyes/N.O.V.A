@@ -175,7 +175,7 @@ def test_assistant_greeting_flag(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(A, "_ask", ask)
     monkeypatch.setattr(A, "_say", say)
-    monkeypatch.setattr(A, "_pull_models", lambda profile: [])
+    monkeypatch.setattr(A, "_pull_models", lambda profile, **kwargs: [])
     from nova.setup import autostart as autostart_mod
 
     monkeypatch.setattr(autostart_mod, "set_autostart", lambda enabled: None)
@@ -192,7 +192,7 @@ def test_cli_auto_no_models(tmp_path: Path, monkeypatch):
     cfg = str(tmp_path / "config.yaml")
     calls: dict = {}
 
-    def fake_pull(profile):
+    def fake_pull(profile, **kwargs):
         calls["pulled"] = True
         return ["model-x"]
 
@@ -278,7 +278,7 @@ def test_cli_auto_voice_writes_config(tmp_path: Path, monkeypatch):
     ))
     monkeypatch.setattr(C, "detect_ollama", lambda *a, **k: OllamaStatus(installed=True, running=True, models=["llama3.1:8b"], message="serving"))
     monkeypatch.setattr(C, "_ensure_vosk_model", lambda cfg: calls.append(cfg))
-    monkeypatch.setattr("nova.setup.assistant._pull_models", lambda profile: calls.append("pulled"))
+    monkeypatch.setattr("nova.setup.assistant._pull_models", lambda profile, **kwargs: calls.append("pulled"))
 
     rc = C.main(["auto", "--voice", "--config", str(target)])
     assert rc == 0

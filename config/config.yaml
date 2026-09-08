@@ -6,11 +6,10 @@ llm:
   temperature: 0.7
   timeout_s: 60.0
   models:
-    small: llama3.2:1b
-    local: llama3.1:8b
-    coding: qwen2.5-coder:7b
-    vision: ''
     embedding: nomic-embed-text
+    local: llama3.1:8b
+    small: llama3.2:1b-instruct-q5_0
+    coding: qwen2.5-coder:1.5b-base-q5_0
 model_router:
   min_ram_gb: 8.0
   battery: true

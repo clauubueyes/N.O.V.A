@@ -62,8 +62,17 @@ Ollama, **descarga los modelos adecuados a tu hardware** y escribe un
 .\.venv\Scripts\nova-setup          # asistente guiado (recomendado)
 .\.venv\Scripts\nova-setup auto     # bootstrap no interactivo
 .\.venv\Scripts\nova-setup doctor   # diagnóstico de salud
+.\.venv\Scripts\nova-setup install  # alias del asistente interactivo
+.\.venv\Scripts\nova-setup update   # reevaluar hardware, catálogo y stack
+.\.venv\Scripts\nova-setup remove   # revisar y confirmar eliminación de recursos propios
 .\.venv\Scripts\nova-setup autostart --enable 1   # arrancar N.O.V.A. al iniciar sesión
 ```
+
+Los instaladores automáticos nuevos usan `%LOCALAPPDATA%\NOVA\venv` en Windows
+y el directorio de datos de usuario equivalente en Linux/macOS; `.venv` se
+reserva para desarrollo. El mantenimiento registra qué pertenece a N.O.V.A.,
+conserva Ollama preexistente y protege el repositorio. Detalles de rutas,
+catálogo remoto y confirmaciones en [docs/lifecycle.md](docs/lifecycle.md).
 
 Lo que hace, según el hardware detectado (heurística conservadora):
 

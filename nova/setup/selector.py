@@ -221,7 +221,8 @@ def _disk_ok(spec: ModelSpec, cap: CapabilityProfile) -> bool | None:
     return (cap.disk_free_gb - spec.weights_gb) >= _DISK_MARGIN_GB
 
 
-def select_stack(profile: MachineProfile, check_disk: bool = False) -> list[ModelChoice]:
+def select_stack(profile: MachineProfile, check_disk: bool = False,
+                 catalog: dict[str, list[ModelSpec]] | None = None) -> list[ModelChoice]:
     """Pick the best model per role for this machine.
 
     Returns one `ModelChoice` per usable semantic role. Core roles
@@ -234,7 +235,10 @@ def select_stack(profile: MachineProfile, check_disk: bool = False) -> list[Mode
     choices: list[ModelChoice] = []
 
     for kind in _tier_roles(cap.tier):
-        specs = [s for s in candidates(kind) if _allowed_for_tier(s, kind, cap.tier)]
+        available = candidates(kind) if catalog is None else sorted(
+            catalog.get(kind, []), key=lambda s: (s.priority, s.weights_gb)
+        )
+        specs = [s for s in available if s.verified and _allowed_for_tier(s, kind, cap.tier)]
         if not specs:
             continue
 

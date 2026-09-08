@@ -60,7 +60,9 @@ def ollama_payload() -> dict[str, Any]:
 
 
 def config_payload() -> dict[str, Any]:
-    path = Path("config/config.yaml")
+    from nova.core.paths import default_config_path
+
+    path = default_config_path()
     data: dict[str, Any] = {"path": str(path), "exists": path.exists(), "complete": False}
     if data["exists"]:
         try:
@@ -81,7 +83,7 @@ class ProvisionRequest(BaseModel):
     plugins: bool = True
     automation: bool = False
     autostart: bool | None = None
-    config_path: str = "config/config.yaml"
+    config_path: str | None = None
 
 
 class AutostartRequest(BaseModel):
@@ -154,12 +156,13 @@ def build_setup_router() -> APIRouter:
         _guard(request)
         from nova.setup.autostart import AutostartError, set_autostart
         from nova.setup.provision import autoconfigure
+        from nova.core.paths import default_config_path
 
         payload = payload or ProvisionRequest()
         profile = detect_machine()
         report = autoconfigure(
             profile,
-            path=payload.config_path,
+            path=payload.config_path or default_config_path(),
             enable_plugins=payload.plugins,
             enable_voice=payload.voice,
             enable_web=payload.web,
@@ -199,7 +202,7 @@ def build_setup_router() -> APIRouter:
         recs = recommended_models(profile.ram_total_gb, profile.gpu_vram_gb)
         missing = missing_models(st.models, profile.ram_total_gb, profile.gpu_vram_gb)
         if model:
-            targets = [model]
+            targets = [model] if normalize_model_name(model) not in {normalize_model_name(m) for m in st.models} else []
         else:
             targets = [rec.model for rec in recs if normalize_model_name(rec.model) in missing]
 
@@ -222,7 +225,18 @@ def build_setup_router() -> APIRouter:
 
                     def run(target_name: str) -> None:
                         try:
-                            final = puller.pull_model(target_name, progress=progress)
+                            from nova.setup.state import StateStore
+
+                            store = StateStore()
+                            with store.lock():
+                                store.load()
+                                fresh = detect_ollama(settings.llm.base_url)
+                                if normalize_model_name(target_name) in {normalize_model_name(m) for m in fresh.models}:
+                                    final = "success"
+                                else:
+                                    final = puller.pull_model(target_name, progress=progress)
+                                    if final == "success":
+                                        store.record_model(target_name, "web-setup", settings.llm.base_url, owned=True)
                             events.put({"status": "done", "model": target_name, "ok": final == "success"})
                         except Exception as exc:  # noqa: BLE001
                             events.put({"status": "done", "model": target_name, "ok": False, "error": str(exc)})

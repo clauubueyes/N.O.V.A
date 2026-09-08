@@ -38,6 +38,9 @@ class ModelSpec:
     priority: int = 1                  # lower = preferred within the role
     description: str = ""
     tags: tuple[str, ...] = field(default_factory=tuple)
+    min_ollama: str = ""
+    architectures: tuple[str, ...] = field(default_factory=tuple)
+    verified: bool = True
 
     def mem_estimate(self, context: int | None = None) -> float:
         if self.memory_gb:

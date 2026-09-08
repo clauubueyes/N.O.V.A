@@ -14,6 +14,7 @@ from pathlib import Path
 from nova.setup.detect import MachineProfile, detect_machine, detect_ollama
 from nova.setup.models import default_model_for, missing_models
 from nova.setup.provision import autoconfigure
+from nova.setup.state import exclusive
 
 CONFIG_DEFAULT = Path("config/config.yaml")
 
@@ -53,19 +54,29 @@ def _ollama_serve(profile: MachineProfile) -> bool:
     return ensure_ollama_running().running
 
 
-def _pull_models(profile: MachineProfile) -> list[str]:
+@exclusive
+def _pull_models(profile: MachineProfile, config_path: str | Path | None = None) -> list[str]:
     import httpx
 
     from nova.setup.detect import detect_ollama
     from nova.setup.models import normalize_model_name
     from nova.setup.selector import fallback_candidate, plan_lines, select_stack
 
-    base = "http://localhost:11434"
-    st = detect_ollama()
-    if not st.running:
+    from nova.core.config import load_settings
+    from nova.setup.state import StateStore
+
+    base = load_settings(str(config_path) if config_path else None).llm.base_url
+    store = StateStore()
+    store.load()
+    from nova.setup.ollama_lifecycle import local_endpoint, snapshot
+
+    st = snapshot(base)
+    if not local_endpoint(base) or not st.running:
         print("Ollama not running; models not pulled.")
         return []
-    installed = {normalize_model_name(m) for m in st.models}
+    installed = set(st.models)
+    for name in st.models:
+        store.record_model(name, "preexisting", base, owned=False)
 
     print("\nSelecting models for this machine...")
     stack = select_stack(profile, check_disk=True)
@@ -88,14 +99,27 @@ def _pull_models(profile: MachineProfile) -> list[str]:
                     continue
                 print(f"\n  Pulling {name} ({choice.spec.description})...")
                 if _pull_one(client, name):
+                    store.record_model(name, choice.kind, base, owned=True)
+                    digest = snapshot(base).models.get(normalize_model_name(name), "")
+                    store.record_model(name, choice.kind, base, owned=True, digest=digest)
+                    installed.add(normalize_model_name(name))
                     pulled.append(name)
                     print(f"  [ok] {name} ready")
                     continue
                 # Fallback chain: next compatible candidate, then a smaller one.
                 fb = fallback_candidate(choice.kind, name)
+                from nova.setup.selector import Availability, capability_profile, evaluate
+
+                if fb and evaluate(fb, capability_profile(profile))[0] is Availability.NOT_RECOMMENDED:
+                    fb = None
                 if fb and fb.name != name:
+                    if normalize_model_name(fb.name) in installed:
+                        pulled.append(fb.name)
+                        continue
                     print(f"  Trying smaller fallback {fb.name} instead...")
                     if _pull_one(client, fb.name):
+                        store.record_model(fb.name, choice.kind, base, owned=True)
+                        installed.add(normalize_model_name(fb.name))
                         pulled.append(fb.name)
                         print(f"  [ok] {fb.name} ready")
                     else:
@@ -173,7 +197,7 @@ def run_assistant(
         if missing:
             print(f"\nModels to install: {', '.join(sorted(missing))}")
             if auto or (interactive and _ask("Install them now? (this downloads GBs)", default=True)):
-                models_pulled = _pull_models(profile)
+                models_pulled = _pull_models(profile, config_path=config_path)
         else:
             print("\nAll recommended models already present.")
 

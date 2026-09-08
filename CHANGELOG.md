@@ -4,6 +4,16 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigu
 
 ## [0.13.0] - 2026-09-08
 
+### Añadido — mantenimiento de la instalación local
+
+- `nova-setup install`, `update` y `remove`, conservando los comandos anteriores.
+- Estado persistente de propiedad para modelos, Ollama, configuración, entorno,
+  datos y autostart; actualizaciones incrementales con catálogo remoto y fallback local.
+- Confirmación independiente de Ollama, doble confirmación de eliminación y
+  protección explícita de repositorios, enlaces y junctions.
+- Nuevas instalaciones fuera del repositorio y pruebas de lifecycle aisladas.
+  Comportamiento, compatibilidad y límites documentados en `docs/lifecycle.md`.
+
 ### Añadido — PHASE 13: Setup / Instalador (wizard JARVIS + one-click + instalador web)
 
 - **`nova-setup` CLI** (`nova/setup/cli.py`): instalación por línea de órdenes con `nova-setup auto`

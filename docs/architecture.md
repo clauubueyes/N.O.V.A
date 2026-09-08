@@ -2,6 +2,12 @@
 
 ## Principio
 
+El mantenimiento local se documenta en [lifecycle.md](lifecycle.md). `nova.setup`
+reutiliza detección y selección adaptativa; `state` registra propiedad,
+`remote_catalog` actualiza metadatos, `update` separa plan y ejecución, `remove`
+valida y elimina recursos propios y `ollama_lifecycle` contiene el adaptador de
+sistema. `nova.core.paths` resuelve las rutas de ejecución sin depender del setup.
+
 N.O.V.A. separa estrictamente:
 
 - **INTELIGENCIA** — el LLM (propuesta de intención).

@@ -203,6 +203,10 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 
 ## PHASE 13 — Setup/Install Wizard ✅
 
+- [x] Lifecycle local: `install`, `update`, `remove`, estado de propiedad,
+  catálogo refrescable, confirmaciones independientes y protección explícita
+  del repositorio. Detalles y límites en [lifecycle.md](lifecycle.md).
+
 - [x] **Detección de máquina real** (`nova/setup/detect.py`): RAM física (Windows vía
   `GlobalMemoryStatusEx`, POSIX vía `os.sysconf`) y VRAM de GPU/`nvidia-smi` con fallback WMI — todo
   best-effort y sin dependencias pesadas. `MachineProfile` + `OllamaStatus` (binary presente, `ollama

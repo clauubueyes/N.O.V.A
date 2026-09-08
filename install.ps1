@@ -23,12 +23,16 @@ param(
     [switch]$NoSetup,
     [switch]$NoModels,
     [switch]$Autostart,
-    [string]$Config = "config/config.yaml"
+    [string]$Config = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
+if (-not $env:NOVA_HOME) { $env:NOVA_HOME = Join-Path $env:LOCALAPPDATA "NOVA" }
+if (-not $Config) { $Config = Join-Path $env:NOVA_HOME "config.yaml" }
+$VenvDir = Join-Path $env:NOVA_HOME "venv"
+$VenvCreated = -not (Test-Path (Join-Path $VenvDir "pyvenv.cfg"))
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Trace-Cmd {
@@ -114,12 +118,12 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  Using Python: $py"
 
 # ---------------------------------------------------------------- venv
-Write-Step "Creating virtualenv (.venv)"
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    & $py -m venv .venv
+Write-Step "Creating virtualenv ($VenvDir)"
+if (-not (Test-Path (Join-Path $VenvDir "Scripts\python.exe"))) {
+    & $py -m venv $VenvDir
     if ($LASTEXITCODE -ne 0) { exit 1 }
 }
-$VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
+$VenvPy = Join-Path $VenvDir "Scripts\python.exe"
 
 # ---------------------------------------------------------------- pip
 Write-Step "Installing N.O.V.A."
@@ -133,12 +137,16 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  pip install failed." -ForegroundColor Red
     exit 1
 }
+if ($VenvCreated) {
+    & $VenvPy -m nova.setup.bootstrap --venv $VenvDir
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+}
 
 # ---------------------------------------------------------------- Ollama
 Write-Step "Ensuring Ollama is installed"
 Write-Host "  Estado python        : $py" -ForegroundColor DarkGray
 Write-Host "  Ollama en PATH       : $((Get-Command ollama -ErrorAction SilentlyContinue) -ne $null)" -ForegroundColor DarkGray
-$ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+$ollama = & $VenvPy -m nova.setup.bootstrap --find-ollama
 if (-not $ollama) {
     $probeOllama = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
     Write-Host "  Buscando por ruta    : $probeOllama -> $(Test-Path $probeOllama)" -ForegroundColor DarkGray
@@ -147,14 +155,18 @@ if (-not $ollama) {
         Select-Object -First 1 -ExpandProperty FullName
 }
 Write-Host "  Ollama detectado     : $ollama" -ForegroundColor DarkGray
+$OllamaCreated = -not $ollama
+$OllamaMethod = "official"
 if (-not $ollama) {
     $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
     Write-Host "  winget disponible    : $($null -ne $winget)" -ForegroundColor DarkGray
     if ($winget) {
         Write-Host "  [comando] winget install --id Ollama.Ollama ..." -ForegroundColor DarkGray
         winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) { $OllamaMethod = "winget" }
         Write-Host "  [salida] winget codigo=$LASTEXITCODE" -ForegroundColor DarkGray
         $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+        if (-not $ollama -and (Test-Path $probeOllama)) { $ollama = $probeOllama }
     }
     if (-not $ollama) {
         # No winget (or it didn't register ollama): download the official installer.
@@ -176,6 +188,7 @@ if (-not $ollama) {
         Write-Host "  [comando] $installer /VERYSILENT (instalando, acepta el UAC si sale)..." -ForegroundColor DarkGray
         $op = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT" -Wait -PassThru
         Write-Host "  [salida] instalador Ollama exit code=$($op.ExitCode)" -ForegroundColor DarkGray
+        if ($op.ExitCode -ne 0) { exit $op.ExitCode }
         # The installer registers ollama for new shells; refresh this session's PATH too.
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
         $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
@@ -187,17 +200,11 @@ if (-not $ollama) {
             exit 1
         }
     }
-    # Make sure Ollama's folder is in the user PATH permanently (the installer
-    # sometimes only registers it for new shells) and refresh this session too,
-    # so the provisioning step can run `ollama` / `nova-setup` reliably.
-    $ollamaDir = Split-Path -Parent $ollama
-    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-    Write-Host "  PATH de usuario contiene Ollama: $($userPath -like "*$ollamaDir*")" -ForegroundColor DarkGray
-    if ($userPath -notlike "*$ollamaDir*") {
-        [System.Environment]::SetEnvironmentVariable("Path", "$userPath;$ollamaDir", "User")
-        Write-Host "  [accion] Added Ollama to the user PATH: $ollamaDir" -ForegroundColor Green
-    }
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+}
+if ($OllamaCreated -and $ollama) {
+    & $VenvPy -m nova.setup.bootstrap --ollama $ollama --method $OllamaMethod
+    if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 # Ensure the service is running (`ollama serve` detached; best-effort).
 Write-Host "  [comando] ollama list (comprobar servidor)" -ForegroundColor DarkGray
@@ -220,24 +227,29 @@ if (-not $NoSetup) {
     Write-Step "Auto-provisioning (detect machine, install models, write config)"
     $noModelsArg = if ($NoModels) { "--no-models" } else { "" }
     $voiceArg = if ($Voice) { "--voice" } else { "" }
-    $setupExe = Join-Path $Root ".venv\Scripts\nova-setup.exe"
+    $setupExe = Join-Path $VenvDir "Scripts\nova-setup.exe"
     Write-Host "  [comando] $setupExe auto --config $Config $noModelsArg $voiceArg" -ForegroundColor DarkGray
-    & $setupExe auto --config $Config $noModelsArg $voiceArg
+    $setupArgs = @("auto", "--config", $Config)
+    if ($NoModels) { $setupArgs += "--no-models" }
+    if ($Voice) { $setupArgs += "--voice" }
+    & $setupExe @setupArgs
     Write-Host "  [salida] nova-setup auto codigo=$LASTEXITCODE" -ForegroundColor DarkGray
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 # ---------------------------------------------------------------- autostart
 if ($Autostart) {
     Write-Step "Enabling autostart on login"
-    $setupExe = Join-Path $Root ".venv\Scripts\nova-setup.exe"
+    $setupExe = Join-Path $VenvDir "Scripts\nova-setup.exe"
     Write-Host "  [comando] $setupExe autostart --enable 1" -ForegroundColor DarkGray
     & $setupExe autostart --enable 1
     Write-Host "  [salida] nova-setup autostart codigo=$LASTEXITCODE" -ForegroundColor DarkGray
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Write-Step "Done."
-Write-Host "  Start chatting with:  .\.venv\Scripts\nova"
-Write-Host "  API + web UI:         .\.venv\Scripts\nova-api   (http://127.0.0.1:8000/)"
+Write-Host "  Start chatting with:  $VenvDir\Scripts\nova.exe"
+Write-Host "  API + web UI:         $VenvDir\Scripts\nova-api.exe   (http://127.0.0.1:8000/)"
 if ($Voice) {
     Write-Host "  Voice mode:           (in chat) /voice"
 }

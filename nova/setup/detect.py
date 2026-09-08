@@ -369,6 +369,25 @@ def _find_ollama_bin() -> str | None:
         return on_path
     candidates = []
     if sys.platform.startswith("win"):
+        import winreg
+
+        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+                try:
+                    with winreg.OpenKey(hive, r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+                                        0, winreg.KEY_READ | view) as uninstall:
+                        for index in range(winreg.QueryInfoKey(uninstall)[0]):
+                            try:
+                                with winreg.OpenKey(uninstall, winreg.EnumKey(uninstall, index)) as app:
+                                    display, _ = winreg.QueryValueEx(app, "DisplayName")
+                                    if display != "Ollama":
+                                        continue
+                                    location, _ = winreg.QueryValueEx(app, "InstallLocation")
+                                    candidates.append(os.path.join(location, "ollama.exe"))
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
         candidates.append(
             os.path.join(
                 os.environ.get("LOCALAPPDATA", ""),

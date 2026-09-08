@@ -383,9 +383,11 @@ def _apply_env(data: dict[str, Any], prefix: str = ENV_PREFIX) -> None:
             target[parts[-1]] = value
 
 
-def load_settings(path: str = "config/config.yaml", prefix: str = ENV_PREFIX) -> NovaSettings:
+def load_settings(path: str | None = None, prefix: str = ENV_PREFIX) -> NovaSettings:
+    from nova.core.paths import default_config_path
+
     data: dict[str, Any] = {}
-    config_path = Path(path)
+    config_path = Path(path) if path is not None else default_config_path()
     if config_path.exists():
         with open(config_path, encoding="utf-8") as fh:
             loaded = yaml.safe_load(fh)

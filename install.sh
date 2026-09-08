@@ -22,7 +22,14 @@ cd "$ROOT"
 VOICE=0
 NO_SETUP=0
 AUTOSTART=0
-CONFIG="config/config.yaml"
+if [ "$(uname)" = "Darwin" ]; then
+  export NOVA_HOME="${NOVA_HOME:-$HOME/Library/Application Support/NOVA}"
+else
+  export NOVA_HOME="${NOVA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/NOVA}"
+fi
+CONFIG="$NOVA_HOME/config.yaml"
+VENV_DIR="$NOVA_HOME/venv"
+VENV_CREATED=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -47,11 +54,12 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
 }
 
 # ------------------------------------------------------------------ venv
-step "Creating virtualenv (.venv)"
-if [ ! -x ".venv/bin/python" ]; then
-  python3 -m venv .venv
+step "Creating virtualenv ($VENV_DIR)"
+if [ ! -x "$VENV_DIR/bin/python" ]; then
+  python3 -m venv "$VENV_DIR"
+  VENV_CREATED=1
 fi
-VENVPY="$ROOT/.venv/bin/python"
+VENVPY="$VENV_DIR/bin/python"
 
 # ------------------------------------------------------------------ pip
 step "Installing N.O.V.A."
@@ -61,6 +69,10 @@ if [ "$VOICE" = "1" ]; then
 else
   "$VENVPY" -m pip install --upgrade pip
   "$VENVPY" -m pip install -e ".[dev]"
+fi
+
+if [ "$VENV_CREATED" = "1" ]; then
+  "$VENVPY" -m nova.setup.bootstrap --venv "$VENV_DIR"
 fi
 
 # ------------------------------------------------------------------ Ollama
@@ -81,18 +93,18 @@ fi
 # ------------------------------------------------------------------ provision
 if [ "$NO_SETUP" = "0" ]; then
   step "Auto-provisioning (detect machine, install models, write config)"
-  "$ROOT/.venv/bin/nova-setup" auto --config "$CONFIG"
+  "$VENV_DIR/bin/nova-setup" auto --config "$CONFIG"
 fi
 
 # ------------------------------------------------------------------ autostart
 if [ "$AUTOSTART" = "1" ]; then
   step "Enabling autostart on login"
-  "$ROOT/.venv/bin/nova-setup" autostart --enable 1
+  "$VENV_DIR/bin/nova-setup" autostart --enable 1
 fi
 
 step "Done."
-echo "  Start chatting with:  .venv/bin/nova"
-echo "  API + web UI:         .venv/bin/nova-api   (http://127.0.0.1:8000/)"
+echo "  Start chatting with:  $VENV_DIR/bin/nova"
+echo "  API + web UI:         $VENV_DIR/bin/nova-api   (http://127.0.0.1:8000/)"
 if [ "$VOICE" = "1" ]; then
   echo "  Voice mode:           (in chat) /voice"
 fi
