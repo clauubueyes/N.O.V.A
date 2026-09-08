@@ -229,8 +229,11 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
   además el stack de voz local.
 - [x] **Saludo JARVIS por voz**: el asistente de primer arranque y el chat pueden saludar
   por TTS local (best-effort, nunca bloquea y degrada a silencio si falta `pyttsx3`).
+- [x] **Arranque automático de Ollama**: `nova`, `nova-api` y `nova-agent` comprueban si
+  Ollama responde y, si no, lanzan `ollama serve` en segundo plano antes de conectar
+  (`ensure_ollama_running` en `nova/setup/detect.py`).
 - [x] **`/status` en el chat**: alias de `/doctor` para diagnóstico rápido.
-- [x] Tests dedicados (`tests/test_setup.py`, 16). Total: **288** (272 previos + 16), warnings fastapi.
+- [x] Tests dedicados (`tests/test_setup.py`, 19). Total: **291** (272 previos + 19), warnings fastapi.
 - [ ] (Fuera de alcance acordado) Añadir presets de plugins concretos (spotify/vscode/home-assistant).
 
 > El instalador es una capa de confort, no un bypass: los defaults que genera pasan por el mismo

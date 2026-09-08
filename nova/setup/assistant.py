@@ -9,7 +9,6 @@ installed and configured — can greet and speak through N.O.V.A. itself
 (ADR-017: the audio never leaves the device).
 """
 
-import sys
 from pathlib import Path
 
 from nova.setup.detect import MachineProfile, detect_machine, detect_ollama
@@ -49,25 +48,9 @@ def _ask(prompt: str, default: bool = True) -> bool:
 def _ollama_serve(profile: MachineProfile) -> bool:
     """Start Ollama in the background (best-effort) and return success."""
     print("  Starting Ollama...")
-    if sys.platform.startswith("win"):
-        # The Ollama app is the normal launcher; fall back to `ollama serve`.
-        try:
-            import subprocess
+    from nova.setup.detect import ensure_ollama_running
 
-            subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                close_fds=True,
-            )
-        except Exception:
-            pass
-        # Give it a moment to bind the port.
-        import time
-
-        time.sleep(3)
-    return detect_ollama().running
+    return ensure_ollama_running().running
 
 
 def _pull_models(profile: MachineProfile) -> list[str]:

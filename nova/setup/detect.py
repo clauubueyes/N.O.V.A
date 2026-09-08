@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Iterable
 
@@ -24,6 +25,7 @@ class OllamaStatus:
     base_url: str = "http://localhost:11434"
     models: list[str] = field(default_factory=list)
     message: str = ""
+    started_now: bool = False
 
 
 @dataclass
@@ -195,4 +197,61 @@ def detect_ollama(url: str = "http://localhost:11434") -> OllamaStatus:
                 "Ollama binary found but not serving; run `ollama serve` "
                 "(or start the Ollama app)"
             )
+    return status
+
+
+def _url_reachable(url: str, timeout: float = 2.0) -> bool:
+    """True when an HTTP server answers at `url` (dependency-free)."""
+    try:
+        from urllib.request import Request, urlopen
+
+        with urlopen(Request(url, method="GET"), timeout=timeout) as resp:
+            return resp.status < 500
+    except Exception:
+        return False
+
+
+def start_ollama() -> bool:
+    """Launch `ollama serve` detached (best-effort). True if the process started."""
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        return False
+    try:
+        subprocess.Popen(
+            [ollama_bin, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            close_fds=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def ensure_ollama_running(
+    url: str = "http://localhost:11434",
+    wait_s: float = 10.0,
+) -> OllamaStatus:
+    """Best-effort: make sure an Ollama server answers at `url`.
+
+    Fast path: if the endpoint already responds, nothing happens. Otherwise it
+    launches `ollama serve` in the background and polls until the port binds.
+    Returns an `OllamaStatus` whose `started_now` is True when this call had to
+    start the server itself.
+    """
+    if _url_reachable(url):
+        return detect_ollama(url)
+    started = start_ollama()
+    if not started:
+        return detect_ollama(url)
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        if _url_reachable(url):
+            status = detect_ollama(url)
+            status.started_now = True
+            return status
+        time.sleep(0.5)
+    status = detect_ollama(url)
+    status.started_now = True
     return status

@@ -3,8 +3,10 @@
 ## Requisitos
 
 - **Python** 3.11+ (verificado: 3.11.9).
-- **Ollama** corriendo en `http://localhost:11434` (instalado: 0.33.3). El instalador
-  one-click lo instala (winget en Windows) y arranca; `nova-setup` también comprueba que corra.
+- **Ollama** (instalado: 0.33.3). No hace falta tenerlo encendido a mano: al lanzar `nova`,
+  `nova-api` o `nova-agent`, N.O.V.A. comprueba si responde y, si no, arranca `ollama serve`
+  en segundo plano automáticamente (`ensure_ollama_running`). El instalador one-click también
+  lo instala (winget en Windows) y comprueba que corra.
 - Modelos descargados, p. ej.:
   ```powershell
   ollama pull llama3.1:8b
@@ -123,7 +125,7 @@ set NOVA_LLM_DEFAULT_MODEL=qwen2.5-coder:7b          # cmd
 
 ## Ejecución
 
-CLI interactivo:
+CLI interactivo (si Ollama está instalado pero apagado, se arranca solo):
 
 ```powershell
 .\.venv\Scripts\nova

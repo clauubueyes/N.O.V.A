@@ -75,6 +75,12 @@ def main() -> int:
     setup_logging(settings.logging)
     logger = get_logger("desktop.agent")
 
+    if settings.llm.provider == "ollama":
+        from nova.setup.detect import ensure_ollama_running
+
+        st = ensure_ollama_running()
+        logger.info("ollama check: %s (started_now=%s)", st.message, st.started_now)
+
     provider = create_provider(settings.llm)
     session = ChatSession(
         max_history_messages=settings.session.max_history_messages,

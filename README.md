@@ -92,7 +92,7 @@ Interfaz web y API REST:
 .\.venv\Scripts\nova-agent   # proceso local del Desktop Agent (PHASE 6; remoto opcional en PHASE 8)
 ```
 
-Persiste que Ollama esté corriendo (`ollama serve`) y que tengas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords). Para el routing de PHASE 7, descarga los que quieras en el catálogo: `ollama pull llama3.2:1b` (small) y `ollama pull qwen2.5-coder:7b` (coding).
+Ollama no hace falta tenerlo encendido a mano: `nova`, `nova-api` y `nova-agent` lo arrancan en segundo plano si está instalado pero apagado. Solo necesitas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords). Para el routing de PHASE 7, descarga los que quieras en el catálogo: `ollama pull llama3.2:1b` (small) y `ollama pull qwen2.5-coder:7b` (coding).
 
 Prueba una herramienta dentro del chat:
 

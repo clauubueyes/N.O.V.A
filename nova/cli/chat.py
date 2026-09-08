@@ -135,6 +135,16 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(settings.logging)
     logger = get_logger("cli.chat")
 
+    if settings.llm.provider == "ollama":
+        from nova.setup.detect import ensure_ollama_running
+
+        st = ensure_ollama_running()
+        logger.info("ollama check: %s (started_now=%s)", st.message, st.started_now)
+        if st.started_now:
+            print("Ollama no estaba activo: lo he arrancado en segundo plano.")
+        elif st.installed and not st.running:
+            print("Aviso: Ollama no responde. Arrancalo con `ollama serve`.")
+
     provider = create_provider(settings.llm)
     session = ChatSession(
         max_history_messages=settings.session.max_history_messages,

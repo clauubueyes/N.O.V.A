@@ -198,3 +198,64 @@ def test_cli_auto_no_models(tmp_path: Path, monkeypatch):
     assert rc == 0
     assert "pulled" not in calls
     assert cfg and Path(cfg).exists()
+
+
+def test_ensure_ollama_already_running(monkeypatch):
+    """Fast path: when the endpoint answers, nothing is started."""
+    import nova.setup.detect as D
+
+    started = []
+
+    def fake_start() -> bool:
+        started.append(True)
+        return True
+
+    monkeypatch.setattr(D, "_url_reachable", lambda url, timeout=2.0: True)
+    monkeypatch.setattr(D, "start_ollama", fake_start)
+    st = D.ensure_ollama_running()
+    assert st.running is True
+    assert st.started_now is False
+    assert started == []
+
+
+def test_ensure_ollama_starts_when_down(monkeypatch):
+    """When unreachable, ensure launches `ollama serve` and reports started_now."""
+    import nova.setup.detect as D
+    import types
+
+    class FauxTime:
+        def monotonic(self):
+            return 0.0
+
+        def sleep(self, _s):
+            return None
+
+    reach_calls = []
+
+    def fake_reach(url, timeout=2.0):
+        reach_calls.append(True)
+        return len(reach_calls) >= 2
+
+    def fake_start() -> bool:
+        return True
+
+    monkeypatch.setattr(D, "_url_reachable", fake_reach)
+    monkeypatch.setattr(D, "start_ollama", fake_start)
+    monkeypatch.setattr(D, "detect_ollama", lambda *a, **k: OllamaStatus(installed=True, running=True, models=["x"], message="serving"))
+    monkeypatch.setattr(D, "time", FauxTime())
+    st = D.ensure_ollama_running()
+    assert st.running is True
+    assert st.started_now is True
+    assert len(reach_calls) >= 2
+
+
+def test_ensure_ollama_not_installed(monkeypatch):
+    """No binary: ensure returns the detection status without attempting to start."""
+    import nova.setup.detect as D
+
+    monkeypatch.setattr(D, "_url_reachable", lambda url, timeout=2.0: False)
+    monkeypatch.setattr(D, "start_ollama", lambda: False)
+    monkeypatch.setattr(D, "detect_ollama", lambda *a, **k: OllamaStatus(installed=False, message="no binary"))
+    st = D.ensure_ollama_running()
+    assert st.installed is False
+    assert st.started_now is False
