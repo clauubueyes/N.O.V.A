@@ -5,6 +5,7 @@ auto-provisioning and autostart. All hardware/Ollama interactions are faked so
 the suite runs offline and on any machine."""
 
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -124,3 +125,76 @@ def test_autostart_unknown_platform(monkeypatch):
 
     with pytest.raises(AutostartError):
         set_autostart(True)
+
+
+def test_say_never_raises_without_pyttsx3(monkeypatch):
+    """The JARVIS greeting must degrade silently when TTS is unavailable."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pyttsx3":
+            raise ImportError("no tts")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    from nova.setup.assistant import _say
+
+    _say("Bienvenido, señor.")  # must not raise
+
+
+def test_say_never_raises_when_tts_fails(monkeypatch):
+    """Even a broken TTS engine must not block the wizard."""
+    import types
+
+    import nova.setup.assistant as A
+
+    fake = types.ModuleType("pyttsx3")
+
+    def init(*a, **k):
+        raise RuntimeError("engine broke")
+
+    fake.init = init
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+    A._say("hola")  # must not raise
+
+
+def test_assistant_greeting_flag(monkeypatch, tmp_path: Path):
+    """run_assistant with greeting declined sets greeted=False; with accept True."""
+    import nova.setup.assistant as A
+
+    calls: list[str] = []
+
+    def ask(prompt, default=True):
+        return True
+
+    def say(text):
+        calls.append(text)
+
+    monkeypatch.setattr(A, "_ask", ask)
+    monkeypatch.setattr(A, "_say", say)
+    target = tmp_path / "config.yaml"
+    result = A.run_assistant(interactive=True, config_path=target)
+    assert result["greeted"] is True
+    assert any("Bienvenido" in c for c in calls)
+
+
+def test_cli_auto_no_models(tmp_path: Path, monkeypatch):
+    """`nova-setup auto --config <tmp> --no-models` writes config without pulling."""
+    import nova.setup.cli as C
+
+    cfg = str(tmp_path / "config.yaml")
+    calls: dict = {}
+
+    def fake_pull(profile):
+        calls["pulled"] = True
+        return ["model-x"]
+
+    monkeypatch.setattr(C, "detect_machine", lambda: MachineProfile(ram_total_gb=32, cpu_count=8, gpu_vram_gb=8, gpu_available=True, os_name="t", python="3"))
+    monkeypatch.setattr(C, "detect_ollama", lambda: OllamaStatus(installed=True, running=True, models=[]))
+    monkeypatch.setattr("nova.setup.assistant._pull_models", fake_pull)
+    rc = C.main(["auto", "--config", cfg, "--no-models"])
+    assert rc == 0
+    assert "pulled" not in calls
+    assert cfg and Path(cfg).exists()

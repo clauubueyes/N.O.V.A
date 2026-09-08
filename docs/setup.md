@@ -3,7 +3,8 @@
 ## Requisitos
 
 - **Python** 3.11+ (verificado: 3.11.9).
-- **Ollama** corriendo en `http://localhost:11434` (instalado: 0.33.3).
+- **Ollama** corriendo en `http://localhost:11434` (instalado: 0.33.3). El instalador
+  one-click lo instala (winget en Windows) y arranca; `nova-setup` también comprueba que corra.
 - Modelos descargados, p. ej.:
   ```powershell
   ollama pull llama3.1:8b
@@ -11,8 +12,52 @@
   ollama pull nomic-embed-text   # embeddings para la memoria (PHASE 3)
   ```
   Si falta el modelo de embeddings, N.O.V.A. funciona igual con búsqueda por keywords.
+  `nova-setup` recomienda e instala los modelos según tu RAM/GPU automáticamente.
 
 ## Instalación
+
+### Automática (one-click, PHASE 13)
+
+El instalador hace todo: crea el venv, instala el paquete, garantiza que Ollama esté
+instalado y corriendo, detecta tu máquina (CPU/RAM/GPU), descarga los modelos
+adecuados, escribe un `config.yaml` seguro y (opcionalmente) habilita el autostart:
+
+```powershell
+# Windows
+.\install.ps1
+# con voz local y autostart al iniciar sesión:
+.\install.ps1 -Voice -Autostart
+# provisiona el config pero salta la descarga de modelos (~GBs):
+.\install.ps1 -NoModels
+```
+
+```bash
+# Linux/macOS
+./install.sh
+./install.sh --voice --autostart
+```
+
+El bootstrapping correspondiente (`nova-setup`) también se puede invocar a mano:
+
+```powershell
+.\.venv\Scripts\nova-setup        # asistente guiado (detecta, pregunta, provisiona)
+.\.venv\Scripts\nova-setup auto   # sin interacción, con defaults seguros
+.\.venv\Scripts\nova-setup auto --voice --web --config ruta/config.yaml
+.\.venv\Scripts\nova-setup auto --no-models   # config sí, descargas no
+.\.venv\Scripts\nova-setup doctor             # diagnóstico (Ollama, modelos, extras)
+.\.venv\Scripts\nova-setup autostart --enable 1   # (o --disable 0)
+```
+
+Los defaults que escribe respetan el modelo de seguridad: `permissions.autonomy=ask`,
+`allow` solo con `date_time`, `calculate`, `list_dir`, `remember`, `memory_search`;
+`web`/`voice`/`automation` apagados; plugins seguros (`text_tools`/`units`) activados.
+**Nunca sobreescribe** valores que ya tuvieras en tu `config.yaml`. Si `voice` está
+instalada, el asistente puede saludarte por TTS al terminar ("Bienvenido, señor...").
+
+Dentro del chat también tienes `/setup` (lanzar el asistente interactivo), `/doctor`
+y su alias `/status` para diagnosticar sin salir.
+
+### Manual
 
 Desde la raíz del proyecto:
 
@@ -96,7 +141,7 @@ API REST + interfaz web (PHASE 4):
 
 Abre `http://127.0.0.1:8000/` (chat web) o `http://127.0.0.1:8000/docs` (OpenAPI). Host/puerto en `config/config.yaml` -> `api` o con `NOVA_API_HOST` / `NOVA_API_PORT`.
 
-Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/plugins`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/automation`, `/workflows`, `/workflow <nombre>`, `/help`.
+Comandos dentro del chat: `/exit`, `/clear`, `/models`, `/model <nombre>`, `/tools`, `/plugins`, `/run <tool> <json>`, `/remember <text>`, `/memory [query]`, `/agents`, `/agent <nombre> <texto>`, `/automation`, `/workflows`, `/workflow <nombre>`, `/setup`, `/doctor`, `/status`, `/help`.
 
 ### Automatización (PHASE 12)
 

@@ -223,7 +223,14 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
   `autostart --enable 0|1` e interactivo. Despachable también como `nova setup`/`nova doctor`.
 - [x] **Integración chat**: `/setup`, `/doctor` y hint amigable en el primer arranque si no hay modelos.
 - [x] **`OllamaProvider.pull_model`** (streaming de progreso por layers) + `has_model`.
-- [x] Tests dedicados (`tests/test_setup.py`, 12). Total: **284** (272 previos + 12), warnings fastapi.
+- [x] **Instaladores one-click** (`install.ps1` para Windows y `install.sh` para
+  Linux/macOS): crean el venv, instalan el paquete, arrancan/instalan Ollama (winget en
+  Windows), ejecutan `nova-setup auto` y ofrecen autostart. `install.ps1 -Voice` instala
+  además el stack de voz local.
+- [x] **Saludo JARVIS por voz**: el asistente de primer arranque y el chat pueden saludar
+  por TTS local (best-effort, nunca bloquea y degrada a silencio si falta `pyttsx3`).
+- [x] **`/status` en el chat**: alias de `/doctor` para diagnóstico rápido.
+- [x] Tests dedicados (`tests/test_setup.py`, 16). Total: **288** (272 previos + 16), warnings fastapi.
 - [ ] (Fuera de alcance acordado) Añadir presets de plugins concretos (spotify/vscode/home-assistant).
 
 > El instalador es una capa de confort, no un bypass: los defaults que genera pasan por el mismo

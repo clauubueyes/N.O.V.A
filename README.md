@@ -24,6 +24,28 @@ Usuario -> N.O.V.A. -> LLM (local) -> N.O.V.A. Core -> Permission System -> Tool
 
 ## Quickstart
 
+### Instalador one-click (PHASE 13)
+
+```powershell
+# Windows: crea venv, instala, arranca Ollama, detecta tu máquina,
+# descarga los modelos adecuados y escribe config.yaml
+.\install.ps1
+
+# con voz local y autostart:
+.\install.ps1 -Voice -Autostart
+
+# provisiona el config pero salta la descarga de modelos (~GBs):
+.\install.ps1 -NoModels
+```
+
+```bash
+# Linux/macOS
+./install.sh
+./install.sh --voice --autostart
+```
+
+### Manual
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
@@ -54,7 +76,8 @@ Los defaults que escribe **respetan el modelo de seguridad** (ADR-013): herramie
 denegadas por defecto, `web`/`voice`/`automation` apagados, plugins seguros
 (`text_tools`/`units`) activados, y nunca sobreescribe un valor que ya tuvieras en
 tu `config.yaml`. También puedes lanzarlo desde dentro del chat con `/setup` y
-diagnosticar con `/doctor`.
+diagnosticar con `/doctor`. Si la voz local está instalada, el asistente puede
+saludarte por TTS al terminar ("Bienvenido, señor...").
 
 Voz (opcional, PHASE 10 — 100% local, sin APIs de pago):
 

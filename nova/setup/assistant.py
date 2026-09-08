@@ -19,6 +19,25 @@ from nova.setup.provision import autoconfigure
 CONFIG_DEFAULT = Path("config/config.yaml")
 
 
+def _say(text: str) -> None:
+    """Best-effort spoken line via the local TTS (never raises).
+
+    Uses pyttsx3 directly so the wizard can greet even before the full voice
+    pipeline (mic + Vosk) is configured. Falls back silently when unavailable.
+    """
+    try:
+        import pyttsx3
+
+        engine = pyttsx3.init()
+        try:
+            engine.say(text)
+            engine.runAndWait()
+        finally:
+            engine.stop()
+    except Exception:  # noqa: BLE001 - a greeting must never block setup
+        pass
+
+
 def _ask(prompt: str, default: bool = True) -> bool:
     suffix = " [Y/n] " if default else " [y/N] "
     raw = input(prompt + suffix).strip().lower()
@@ -163,6 +182,16 @@ def run_assistant(
         except Exception as exc:  # noqa: BLE001
             print(f"  Could not enable autostart: {exc}")
 
+    # 4) Optional spoken JARVIS-style greeting (best-effort, local TTS only)
+    greeted = False
+    if interactive and _ask("Probar la voz local y recibir un saludo?", default=False):
+        print("  Speaking...")
+        _say(
+            "Bienvenido, señor. Todos los sistemas están operativos y "
+            "listos para trabajar."
+        )
+        greeted = True
+
     print("\n  Done. Run `nova` to chat, or `nova setup --help` for options.")
     return {
         "profile": profile,
@@ -170,4 +199,5 @@ def run_assistant(
         "models_pulled": models_pulled,
         "config": str(report.config_path),
         "autostart": autostart_enabled,
+        "greeted": greeted,
     }

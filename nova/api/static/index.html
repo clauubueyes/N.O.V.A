@@ -18,6 +18,12 @@
   }
   header h1 { font-size: 16px; margin: 0; color: #7fd1ff; letter-spacing: 1px; }
   header .model { color: #8a93a6; font-size: 12px; }
+  .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: #5a6478; flex-shrink: 0; transition: background 0.3s;
+  }
+  .dot.ok { background: #3ecf6e; box-shadow: 0 0 6px #3ecf6e88; }
+  .dot.bad { background: #e05a5a; box-shadow: 0 0 6px #e05a5a88; }
   nav { margin-left: auto; display: flex; gap: 8px; }
   nav select {
     background: #232a38; color: #d7dce5; border: 1px solid #343d50;
@@ -73,6 +79,7 @@
 <body>
 
 <header>
+  <span class="dot" id="dot" title="estado del servidor"></span>
   <h1>N.O.V.A.</h1>
   <span class="model" id="model">conectando...</span>
   <nav>
@@ -80,6 +87,7 @@
     <select id="agent" title="Elige un agente (las tools las decide el modelo)">
       <option value="">sin agente</option>
     </select>
+    <button id="btn-new" type="button">nueva sesión</button>
     <button id="btn-models" type="button">modelos</button>
     <button id="btn-tools" type="button">herramientas</button>
   </nav>
@@ -207,17 +215,29 @@
     try {
       const created = await json("POST", "/v1/sessions", { agent: agentName || null });
       sessionId = created.session_id;
-      const health = await json("GET", "/healthz");
+      updateHealth();
       model.textContent =
         "modelo: " + created.model +
-        (created.agent ? " | agente: " + created.agent : "") +
-        " | estado: " + health.status;
+        (created.agent ? " | agente: " + created.agent : "");
       return created;
     } catch (error) {
       appendMeta("No se pudo iniciar sesion: " + error.message);
       throw error;
     }
   }
+
+  async function updateHealth() {
+    const dot = document.getElementById("dot");
+    try {
+      const health = await json("GET", "/healthz");
+      dot.className = "dot " + (health.status === "ok" ? "ok" : "bad");
+      dot.title = "servidor: " + health.status;
+    } catch (error) {
+      dot.className = "dot bad";
+      dot.title = "servidor no responde";
+    }
+  }
+  setInterval(updateHealth, 15000);
 
   async function boot() {
     attachTokenInput();
@@ -260,6 +280,12 @@
       send.disabled = false;
       input.focus();
     }
+  });
+
+  document.getElementById("btn-new").addEventListener("click", () => {
+    log.replaceChildren();
+    appendMeta("Nueva sesion" + (agentName ? " con agente " + agentName : "") + ". Escribe un mensaje.");
+    createSession().catch(() => {});
   });
 
   document.getElementById("btn-models").addEventListener("click", async () => {

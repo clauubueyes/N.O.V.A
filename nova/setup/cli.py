@@ -66,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_auto.add_argument("--voice", action="store_true", help="enable local voice (STT/TTS)")
     p_auto.add_argument("--web", action="store_true", help="enable web tools")
     p_auto.add_argument("--config", default="config/config.yaml")
+    p_auto.add_argument("--no-models", action="store_true",
+                        help="skip the Ollama model download (config only)")
 
     p_status = sub.add_parser("status", help="check Ollama + models + config health")
 
@@ -99,10 +101,12 @@ def main(argv: list[str] | None = None) -> int:
         if report.changed:
             print("Wrote:", report.summary)
         st = detect_ollama()
-        if st.running:
+        if st.running and not args.no_models:
             from nova.setup.assistant import _pull_models
 
             _pull_models(profile)
+        elif args.no_models:
+            print("--no-models: model download skipped.")
         else:
             print("Ollama not running; models not pulled (run `nova setup`).")
         return 0

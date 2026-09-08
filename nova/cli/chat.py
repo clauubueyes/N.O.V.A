@@ -67,6 +67,7 @@ Commands:
   /automation       scheduler status + scheduled tasks (PHASE 12)
   /setup            run the guided first-run installer (detect machine, pull models)
   /doctor           print a diagnostic summary (Ollama, models, packages)
+  /status           alias of /doctor
   /help             show this help"""
 
 
@@ -189,6 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         return agent
 
     voice = build_voice(settings.voice)
+    if voice is not None and voice.available():
+        voice.say(
+            "Bienvenido, señor. Todos los sistemas están operativos. "
+            "¿En qué puedo ayudarle hoy?"
+        )
 
     # PHASE 12 — Automation. Dedicated runner WITHOUT interactive confirm: a
     # scheduled task has no human to ask, so autonomy=ask tools are DENIED
@@ -479,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
                     st = detect_ollama()
                     print(f"Ollama: {st.message}")
                     continue
-                elif command == "doctor":
+                elif command in ("doctor", "status"):
                     from nova.setup.cli import _do_doctor
 
                     _do_doctor()
