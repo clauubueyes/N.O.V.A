@@ -44,8 +44,15 @@ function Trace-Cmd {
 # Fully self-contained: if Python is missing we download and install it from
 # python.org directly (win-bootstrap). This works even with no winget installed.
 function Find-Python {
-    $c = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
-    if ($c) { return $c }
+    $commands = Get-Command python.exe -All -ErrorAction SilentlyContinue
+    foreach ($command in $commands) {
+        $candidate = $command.Source
+        if ($candidate -like "*\WindowsApps\*") { continue }
+        try {
+            & $candidate -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>$null
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        } catch { }
+    }
     $probe = @(
         "$env:LOCALAPPDATA\Programs\Python",
         "$env:ProgramFiles\Python"
@@ -55,7 +62,12 @@ function Find-Python {
             $exe = Get-ChildItem "$base\Python*\python.exe" -ErrorAction SilentlyContinue |
                 Sort-Object { [int]($_.Directory.Name -replace 'Python','') } -Descending |
                 Select-Object -First 1 -ExpandProperty FullName
-            if ($exe) { return $exe }
+            if ($exe) {
+                try {
+                    & $exe -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>$null
+                    if ($LASTEXITCODE -eq 0) { return $exe }
+                } catch { }
+            }
         }
     }
     return $null
