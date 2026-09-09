@@ -98,6 +98,50 @@ class ModelRouter:
     def default_model(self) -> str:
         return self._default
 
+    def validate_against(self, installed_models: list[str]) -> list[str]:
+        """Remove catalog entries whose models are not in *installed_models*.
+
+        Returns a list of human-readable warnings for every role that was
+        disabled.  The ``embedding`` role is always kept (used by
+        MemoryService, not the chat router).  If a role is removed but has
+        a close candidate in *installed_models*, the warning suggests it.
+        """
+        installed = {m.strip().lower() for m in installed_models}
+        warnings: list[str] = []
+
+        for role in list(self._catalog):
+            if role == _EMBEDDING:
+                continue
+            model = self._catalog[role]
+            if model.strip().lower() not in installed:
+                del self._catalog[role]
+                candidates = [
+                    m for m in installed_models
+                    if model.split(":")[0].lower() in m.lower()
+                ]
+                hint = f" Closest: {candidates[0]}." if candidates else ""
+                warnings.append(
+                    f'Model "{model}" not installed — role "{role}" disabled.{hint}'
+                )
+
+        if not self._catalog.get(_LOCAL) and not self._catalog.get(_SMALL):
+            # Try to auto-select the default model if it exists
+            if self._default.strip().lower() in installed:
+                self._catalog[_LOCAL] = self._default
+                warnings.append(
+                    f'Auto-selected "{self._default}" as primary model.'
+                )
+            else:
+                for m in installed_models:
+                    if m.strip().lower() != self._embedding.strip().lower():
+                        self._catalog[_LOCAL] = m
+                        warnings.append(
+                            f'Auto-selected "{m}" as primary model.'
+                        )
+                        break
+
+        return warnings
+
     @property
     def ai_mode(self) -> AIMode:
         return self._ai_mode

@@ -12,16 +12,17 @@ _BACKUP_COUNT = 3
 _FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 
-def setup_logging(settings: LoggingSettings) -> None:
+def setup_logging(settings: LoggingSettings, *, debug: bool = False) -> None:
     root = logging.getLogger(_LOGGER_NAME)
     if root.handlers:
         return
     root.setLevel(settings.level.upper())
     formatter = logging.Formatter(_FORMAT)
 
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    root.addHandler(console)
+    if debug:
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        root.addHandler(console)
 
     if settings.file:
         path = Path(settings.file)
