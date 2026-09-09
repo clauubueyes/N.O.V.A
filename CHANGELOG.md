@@ -2,6 +2,37 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.15.0] - 2026-09-09
+
+### Añadido — PHASE 14.2: Overhaul de `nova-setup` (dependencias reales + experiencia de terminal)
+
+- Sistema reutilizable de dependencias (`nova/setup/dependencies.py`): catálogo explícito por feature
+  (core / hybrid / voice / dev) con cada dependencia real que N.O.V.A. usa (Python/venv/pip, paquetes
+  core, Ollama; OpenCode, voz, pytest/git como opcionales), detección por binario + probe de versión,
+  comparador de versiones propio (admite 3.11 / 2.4.1 / v1.2.3) e instalación delegada segura
+  (pip en el venv activo, Ollama vía winget o instalador oficial). Nunca asume que "estar en PATH"
+  significa que funciona.
+- Capa de presentación de terminal (`nova/setup/terminal.py`): cabeceras y secciones bonitas, tabla,
+  spinner, símbolos `[✓]/[✗]/[!]` con fallback ASCII, respeto a `NO_COLOR`/`--no-color`, modo
+  `--json` (una línea JSON por evento, sin decoración parse-hostile) y confirmaciones no interactivas.
+- Flujo de instalación por fases (System → Dependency → Install → Verify → Hardware → Ollama →
+  OpenCode → Models → Config → Final → Ready) en `nova setup` / `nova setup install`.
+- Nuevo comando `nova setup repair` (`nova/setup/repair.py`): re-audita dependencias, instala las
+  faltantes seguras, valida el venv, reinicia Ollama, re-aplica defaults seguros de configuración y
+  (no interactivo) re-verifica; nunca recrea entornos ni toca datos/credenciales del usuario.
+- Modo no interactivo `--non-interactive` (sin prompts/spinners) y `--json` en `doctor`, `install`,
+  `repair`, `auto` y `status`.
+- `doctor` reescrito como auditoría completa REQUIRED/OPTIONAL/WARNINGS/READY con tabla de
+  dependencias, hardware, Ollama, OpenCode y autenticación *sin leer nunca* ficheros de credenciales.
+- Corrección del parseo de OpenCode real: `GET /config/providers` devuelve
+  `{providers:[{id, models:{...}}], default:{...}}` (models como *dict*); el parser ahora lo maneja y
+  conserva fallback legacy. Añadido estado de auth por *existencia* (`available/not_configured/unknown`),
+  sin exponer secretos.
+- Tests: `tests/test_terminal.py`, `tests/test_dependencies.py`, `tests/test_setup_phase14_2.py`
+  (shape real de OpenCode, repair, non-interactive/JSON) + E2E de OpenCode real que se salta
+  limpiamente si el servidor no está en marcha.
+- Docs actualizadas (setup, architecture, ADR-021, troubleshooting) y versión alineada a `0.15.0`.
+
 ## [0.14.0] - 2026-09-09
 
 ### Añadido — PHASE 14: Modo HYBRID / fallback cloud (OpenCode) local-first

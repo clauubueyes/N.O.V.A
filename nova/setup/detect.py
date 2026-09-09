@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable
 
 
@@ -79,6 +80,10 @@ class OpenCodeStatus:
     providers: list[str] = field(default_factory=list)
     models: list[str] = field(default_factory=list)
     message: str = ""
+    # Authentication state, only ever determined by *existence* checks so that
+    # credentials never leak through N.O.V.A. output or logs:
+    #   "available" | "not_configured" | "unknown"
+    auth: str = "unknown"
 
 
 def _ram_total_windows() -> float:
@@ -526,8 +531,43 @@ def _find_opencode_bin() -> str | None:
     return None
 
 
+def _opencode_auth(paths: Iterable[Path] | None = None) -> str:
+    """Best-effort auth state for OpenCode.
+
+    *Existence* checks only (no file contents are ever read), so credentials can
+    never appear in N.O.V.A. output or logs. Returns one of:
+    "available", "not_configured", "unknown".
+    """
+    if os.environ.get("OPENCODE_API_KEY"):
+        return "available"
+    candidates = list(paths) if paths is not None else []
+    if not candidates:
+        home = Path.home()
+        data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share"))
+        candidates = [
+            data_home / "opencode" / "auth.json",
+            home / ".config" / "opencode" / "auth.json",
+        ]
+        if sys.platform.startswith("win"):
+            local = os.environ.get("LOCALAPPDATA")
+            if local:
+                candidates.append(Path(local) / "opencode" / "auth.json")
+    if any(candidate.is_file() for candidate in candidates):
+        return "available"
+    return "not_configured"
+
+
 def _opencode_modules(url: str, timeout: float = 2.0) -> tuple[list[str], list[str], bool]:
-    """(providers, models, configured) best-effort via the OpenCode HTTP API."""
+    """(providers, models, configured) best-effort via the OpenCode HTTP API.
+
+    Handles the real OpenCode shape returned by ``GET /config/providers``::
+
+        {"providers": [{"id": "opencode", "env": [...], "options": {...},
+                        "models": {"big-pickle": {...}, ...}}],
+         "default": {"opencode": "big-pickle"}}
+
+    and keeps a legacy fallback for ``{provider: {"models": [...]}}`` configs.
+    """
     providers: list[str] = []
     models: list[str] = []
     configured = False
@@ -539,20 +579,46 @@ def _opencode_modules(url: str, timeout: float = 2.0) -> tuple[list[str], list[s
             if resp.status < 500:
                 payload = json.loads(resp.read().decode("utf-8") or "{}")
                 if isinstance(payload, dict):
-                    config = payload.get("config") or payload
-                    if isinstance(config, dict):
-                        for key, value in config.items():
+                    rows = payload.get("providers") or payload.get("config") or payload
+                    if isinstance(rows, list):
+                        # Real shape: {"providers": [{id, env, options, models}, ...]}
+                        for entry in rows:
+                            if not isinstance(entry, dict):
+                                continue
+                            key = entry.get("id") or ""
+                            if not key:
+                                continue
+                            providers.append(key)
+                            configured = configured or bool(
+                                entry.get("env") or entry.get("options") or entry.get("apiKey")
+                            )
+                            ms = entry.get("models") or []
+                            if isinstance(ms, dict):
+                                for mid, info in ms.items():
+                                    if isinstance(info, dict):
+                                        models.append(f"{key}/{info.get('id', mid)}")
+                                    else:
+                                        models.append(f"{key}/{mid}")
+                            elif isinstance(ms, list):
+                                for m in ms:
+                                    mid = m.get("id") if isinstance(m, dict) else str(m)
+                                    models.append(f"{key}/{mid}")
+                    elif isinstance(rows, dict):
+                        # Legacy shape: {provider: {models: [...]}}
+                        for key, value in rows.items():
                             if isinstance(value, dict):
                                 providers.append(key)
                                 configured = configured or bool(
-                                    value.get("apiKey")
-                                    or value.get("enabled")
-                                    or value.get("models")
+                                    value.get("apiKey") or value.get("enabled")
                                 )
                                 ms = value.get("models") or []
-                                for m in ms:
-                                    if isinstance(m, dict) and m.get("id"):
-                                        models.append(f"{key}/{m['id']}")
+                                if isinstance(ms, dict):
+                                    for mid, info in ms.items():
+                                        models.append(f"{key}/{info.get('id', mid) if isinstance(info, dict) else mid}")
+                                elif isinstance(ms, list):
+                                    for m in ms:
+                                        if isinstance(m, dict) and m.get("id"):
+                                            models.append(f"{key}/{m['id']}")
     except Exception:
         pass
     return providers, models, configured
@@ -562,8 +628,9 @@ def detect_opencode(url: str = "http://127.0.0.1:4096") -> OpenCodeStatus:
     """Best-effort PHASE 14 detection of an OpenCode installation.
 
     Reports whether the `opencode` binary is on PATH (installed), whether its
-    server answers at `url` (running), and which providers/models it exposes.
-    Never modifies anything: reading configuration and health is safe.
+    server answers at `url` (running), which providers/models it exposes, and a
+    secret-free authentication state. Never modifies anything: reading
+    configuration and health is safe.
     """
     bin_path = _find_opencode_bin()
     status = OpenCodeStatus(
@@ -577,11 +644,12 @@ def detect_opencode(url: str = "http://127.0.0.1:4096") -> OpenCodeStatus:
     if _url_reachable(url, timeout=2.0):
         status.running = True
         status.providers, status.models, status.configured = _opencode_modules(url)
+    status.auth = _opencode_auth()
     providers = ", ".join(status.providers) if status.providers else "none"
     if status.running:
         status.message = (
             f"OpenCode server is running at {url} "
-            f"(providers: {providers}, configured: {status.configured})"
+            f"(providers: {providers}, auth: {status.auth}, models: {len(status.models)})"
         )
     elif status.installed:
         status.message = (

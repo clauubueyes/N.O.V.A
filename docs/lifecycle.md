@@ -5,6 +5,8 @@
 
 ```cmd
 nova-setup install
+nova-setup repair            [--non-interactive] [--config ruta]
+nova-setup doctor            [--non-interactive] [--json] [--no-color|--ascii]
 nova-setup update
 nova-setup update --component models
 nova-setup update --component ollama
@@ -13,6 +15,15 @@ nova-setup remove
 nova-setup autostart --enable
 nova-setup autostart --disable
 ```
+
+`nova-setup repair` (PHASE 14.2) re-audita las dependencias reales
+(`nova/setup/dependencies.py`), instala las de Python que falten con el pip del
+venv activo, valida el venv (nunca lo recrea por su cuenta), reinicia Ollama si
+está instalado pero no responde, re-provisiona solo los defaults seguros que el
+usuario no haya definido y reporta los modelos recomendados que falten. No borra
+recursos ni toca credenciales. `doctor` es ahora una auditoría completa
+REQUIRED/OPTIONAL/WARNINGS/READY; `--json` emite una línea JSON por evento para
+pipelines. Detalles de fases y dependencias en [setup.md](setup.md).
 
 ## Propiedad y rutas
 

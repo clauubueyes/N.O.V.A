@@ -319,6 +319,38 @@ config.yaml -> automation (enabled, poll_s, tasks, workflows)
   `run_llm` inexistente) y API `GET /v1/automation`,
   `POST /v1/automation/tasks|workflows/{name}/run` (scheduler en lifespan).
 
+## Setup e instalación (PHASE 14.2) — ADR-021
+
+El instalador se apoya en dos subsistemas nuevos, sin dependencias externas extra:
+
+```
+nova/setup/terminal.py      -> capa de presentación (Terminal)
+   colores ANSI / NO_COLOR / --no-color, símbolos Ûnico/ASCII, secciones, tabla,
+   spinner, confirmaciones, --non-interactive y --json (1 línea JSON por evento)
+
+nova/setup/dependencies.py  -> catálogo + detección + instalación de dependencias
+   Dependency(name, purpose, binary|python_module, min_version, required, platform,
+              features, install_hint, status, version)
+   audit_dependencies()      -> Audit(required/optional/outdated, ready)
+   install_dependency()      -> pip del venv activo | winget/oficial Ollama
+   version_key()             -> comparador de versiones (3.11 / 2.4.1 / v1.2.3)
+```
+
+```
+nova-setup (install/default)  -> run_assistant: 11 fases
+   System -> Dependency Check -> Install Missing -> Verify -> Hardware
+   -> Ollama -> OpenCode (opcional) -> Models -> Config -> Autostart/Voice -> Ready
+nova-setup repair             -> run_repair: re-audita, instala faltantes seguros,
+                                 valida venv, reinicia Ollama, re-provisiona defaults
+nova-setup doctor             -> auditoría REQUIRED/OPTIONAL/WARNINGS/READY
+nova-setup auto               -> no interactivo, defaults seguros (config sí/directos)
+```
+
+Reglas de diseño: detección por binario `+` versión real (nunca "en PATH = funciona");
+solo Ollama y paquetes Python se auto-instalan (OpenCode jamás); credenciales nunca se leen
+(`doctor` reporta auth por existencia); el flujo no cambia los defaults de seguridad de
+`autoconfigure`; `install.ps1`/`install.sh` y el modo LOCAL quedan intactos.
+
 ## Arquitectura objetivo (evolución incremental)
 
 La visión de producto mapea sobre esta estructura sin saltos de arquitectura:

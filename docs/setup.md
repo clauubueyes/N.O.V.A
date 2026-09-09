@@ -55,9 +55,55 @@ El bootstrapping correspondiente (`nova-setup`) también se puede invocar a mano
 .\.venv\Scripts\nova-setup auto   # sin interacción, con defaults seguros
 .\.venv\Scripts\nova-setup auto --voice --web --config ruta/config.yaml
 .\.venv\Scripts\nova-setup auto --no-models   # config sí, descargas no
-.\.venv\Scripts\nova-setup doctor             # diagnóstico (Ollama, modelos, extras)
+.\.venv\Scripts\nova-setup doctor             # diagnóstico completo (ver abajo)
+.\.venv\Scripts\nova-setup repair            # re-audita y repara la instalación
 .\.venv\Scripts\nova-setup autostart --enable 1   # (o --disable 0)
 ```
+
+### Experiencia de instalación por fases (PHASE 14.2)
+
+El asistente guiado (con o sin argumentos, o `nova-setup install`) recorre 11 fases visibles:
+**System → Dependency Check → Install Missing → Verification → Hardware → Ollama → OpenCode →
+Models → Config → Autostart/Voice (si lo pides) → Ready**. Cada fase usa la capa `Terminal`
+(`nova/setup/terminal.py`): secciones, tabla de dependencias, spinner y símbolos `[✓]/[✗]/[!]`
+con fallback ASCII automático cuando la consola no soporta Unicode (o con `--ascii`).
+
+**Dependencias gestionadas** (`nova/setup/dependencies.py`): cada dependencia es un objeto con
+nombre, propósito, binario/módulo, versión mínima, si es obligatoria, plataforma y método de
+instalación — siempre derivado de lo que N.O.V.A. **realmente** usa:
+
+- **Obligatorias (core)**: Python 3.11+, venv, pip, `httpx`, `pydantic`, `pydantic-settings`,
+  `PyYAML`, `fastapi`, `uvicorn` y **Ollama**.
+- **Opcionales**: `opencode` (solo HYBRID; nunca se auto-instala), voz (`numpy`, `vosk`,
+  `pyttsx3`, `sounddevice`), dev (`pytest`, `git`).
+
+La detección nunca asume que "estar en PATH" significa que funciona: comprueba el binario **y**
+su versión (p. ej. `ollama --version`). Si falta una dependencia obligatoria de Python, se ofrece
+instalarla con pip del venv activo (o se instala sola en `auto`/`repair`); Ollama se instala con
+winget o el instalador oficial (solo cuando el usuario lo confirma o en modo `auto`); **OpenCode
+nunca se instala ni se le tocan las credenciales**.
+
+**`nova-setup repair [--non-interactive] [--config ruta]`** re-audita y repara: instala las
+dependencias de Python que falten, valida el venv (nunca lo recrea solo), reinicia Ollama si está
+instalado pero apagado, re-aplica defaults seguros de provisionado solo donde no hay valores
+propios del usuario y (si Ollama responde) avisa/instala los modelos recomendados que falten.
+
+**Salida no interactiva / máquina**: los comandos `doctor`, `install`, `repair`, `auto` y `status`
+aceptan `--non-interactive` (sin prompts ni spinners) y `--json` (una línea JSON por evento, sin
+decoración) para pipelines y CI:
+`nova-setup doctor --json | jq -r 'select(.level=="fail") | .message'`.
+
+`nova-setup doctor` es ahora una **auditoría completa**: sistema (OS/CPU/RAM/GPU/Python), tabla de
+dependencias con estado (OK/outdated/missing/optional), Ollama y modelos recomendados que falten,
+OpenCode (modo AI, privacidad, providers, modelos, **autenticación**) y plan de hardware, con el
+veredicto final `READY` / `NOT READY`. La autenticación de OpenCode se reporta solo como
+`available` / `not_configured` / `unknown` mediante comprobaciones de existencia: **nunca** se
+leen ni imprimen ficheros de credenciales.
+
+```powershell
+.\.venv\Scripts\nova-setup doctor --no-color    # consola sin ANSI (o $env:NO_COLOR=1)
+.\.venv\Scripts\nova-setup doctor --ascii       # símbolos ASCII en consolas limitadas
+.\.venv\Scripts\nova-setup repair --non-interactive
 
 Los defaults que escribe respetan el modelo de seguridad: `permissions.autonomy=ask`,
 `allow` solo con `date_time`, `calculate`, `list_dir`, `remember`, `memory_search`;
