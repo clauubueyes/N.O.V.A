@@ -64,24 +64,44 @@ Clasificación de tareas: `simple`, `coding`, `vision`, `heavy` y `general` (reg
 
 - CLI: `/route <texto>` muestra la decisión y `/catalog` lista el catálogo; el chat y los agentes
   se rutean automáticamente por turno.
-- API: `POST /v1/route` devuelve `{task_kind, role, model, reason}`; `POST /v1/sessions/{id}/chat`
-  rutea el modelo por turno salvo que se pase `model` explícito.
+- API: `POST /v1/route` devuelve `{task_kind, provider, role, model, reason}`;
+  `POST /v1/sessions/{id}/chat` rutea el modelo por turno salvo que se pase `model` explícito.
 - `nova-agent` rutea cada mensaje igual que el chat.
 
 ### Escenarios
 
-| Texto (pista) | task_kind | role | modelo (ejemplo) |
-|---|---|---|---|
-| "hola!" | simple | small | `llama3.2:1b` |
-| "escribe una funcion en python" | coding | coding | `qwen2.5-coder:7b` (downshift a small si RAM baja) |
-| "mira esta imagen" | vision | vision | `llama3.2-vision` (si está configurado) |
-| "haz un analisis complejo" | heavy | local | `llama3.1:8b` |
-| "cuéntame una historia" | general | local | `llama3.1:8b` |
+| Texto (pista) | task_kind | role | provider | modelo (ejemplo) |
+|---|---|---|---|---|
+| "hola!" | simple | small | ollama | `llama3.2:1b` |
+| "escribe una funcion en python" | coding | coding | ollama | `qwen2.5-coder:7b` (downshift a small si RAM baja) |
+| "mira esta imagen" | vision | vision | ollama | `llama3.2-vision` (si está configurado) |
+| "haz un analisis complejo" | heavy | local | ollama | `llama3.1:8b` |
+| "haz un analisis complejo" (RAM baja, HIBRID) | heavy | local | opencode | `openai/gpt-4o` (fallback cloud) |
+| "cuéntame una historia" | general | local | ollama | `llama3.1:8b` |
+
+## Cloud fallback (MODO HYBRID, PHASE 14)
+
+Cuando `ai.mode: hybrid` y `ai.privacy: cloud_allowed`, las tareas **`heavy`** con recursos locales
+insuficientes pueden ruteo a **OpenCode** (`providers.opencode`). Reglas:
+
+- **Local-first**: nunca se elige cloud si el modelo local basta (ADR-013/ADR-020).
+- **Privacy**: con `local_only` (defecto) NO existe fallback cloud, aunque haya `open_code.models`.
+- **Solo tareas pesadas**: `simple`/`general` jamás salen del dispositivo.
+- **Catálogo cloud en config** (`open_code.models` por rol `local`/`reasoning`/`coding`/`vision`) y
+  `open_code.default_model` como modelo genérico. Se prefiere el rol `local`/`reasoning` para heavy.
+- **ModelInfo con coste desconocido**: no se hardcodean listas de modelos "gratuitos"; si no hay
+  forma fiable de saber el coste, se reporta `unknown`.
+- **Fallback bidireccional**: si el proveedor cloud falla (auth, rate limit, timeout, red, modelo no
+  disponible), el CLI/API reintentan con el modelo local. Todo se registra en el log.
+
+La memoria sigue siempre local (SQLite + embeddings Ollama); N.O.V.A. nunca sube sus base de datos
+de memoria a un proveedor cloud.
 
 ## Reglas transversales
 
-- Los modelos y URLs viven en config/env (`NOVA_LLM_*`), nunca en código.
-- No se asumen APIs de pago. Una integración cloud futura será un proveedor opcional más en el
-  registry, que requiere configuración explícita del usuario y queda fuera del camino por defecto.
+- Los modelos y URLs viven en config/env (`NOVA_LLM_*`, `NOVA_OPEN_CODE_*`), nunca en código.
+- No se asumen APIs de pago. OpenCode es una integración opcional más en el
+  registry (`opencode`), que requiere configuración explícita del usuario y queda fuera del camino
+  por defecto. N.O.V.A. lo detecta (`nova-setup doctor`) pero jamás lo instala.
 - Si una tarea exige un modelo que no existe localmente, N.O.V.A. responde según sus capacidades
   reales y sugiere descargarlo (`ollama pull <modelo>`), sin inventar resultados.

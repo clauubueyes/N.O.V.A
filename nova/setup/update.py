@@ -108,6 +108,53 @@ def write_stack(path: Path, expected: bytes | None, stack: dict[str, str]) -> No
     temporary.replace(path)
 
 
+def recheck_opencode(path: Path, store: StateStore, confirm=None) -> None:
+    """PHASE 14 — recheck OpenCode (providers/models) without changing anything
+    unless the user confirms."""
+    confirm = confirm or _ask
+    try:
+        from nova.setup.detect import detect_opencode
+
+        oc = detect_opencode()
+
+        def _apply(catalog, default_model):
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+            oc_conf = data.get("open_code", {}) or {}
+            oc_conf["models"] = catalog
+            if default_model:
+                oc_conf["default_model"] = default_model
+            data["open_code"] = oc_conf
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(path.suffix + ".nova-tmp")
+            tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            tmp.replace(path)
+            store.change(lambda s, c=catalog: setattr(s, "opencode_catalog", c))
+
+        print(f"\nOpenCode: {oc.message}")
+        if oc.running and oc.providers:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+            mode = (data.get("ai", {}) or {}).get("mode", "local")
+            existing_default = ((data.get("open_code", {}) or {}).get("default_model", "") or "").strip()
+            catalog = {m.split("/", 1)[1] if "/" in m else m: m for m in oc.models}
+            if mode == "hybrid" and oc.models and confirm(
+                "OpenCode providers detected. Refresh N.O.V.A.'s cloud model catalog from them?",
+                default=False,
+            ):
+                default_model = existing_default or (oc.models[0].split("/", 1)[1] if "/" in oc.models[0] else oc.models[0])
+                _apply(catalog, default_model)
+                print("OpenCode catalog refreshed in config.")
+            elif mode == "hybrid":
+                print("Hybrid mode on - cloud models remain as configured.")
+            else:
+                print("OpenCode reached but N.O.V.A. is in LOCAL mode (ai.mode=local). No cloud routing.")
+        elif oc.installed and not oc.running:
+            print("OpenCode is installed but its server is not running; start it and rerun update to import providers.")
+        elif not oc.installed:
+            print("OpenCode is not installed; hybrid cloud fallback stays disabled until it is.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] OpenCode recheck skipped: {exc}")
+
+
 @exclusive
 def run_update(config: str | None = None, *, catalog_url: str | None = None,
                component: str | None = None, store: StateStore | None = None,
@@ -220,4 +267,8 @@ def run_update(config: str | None = None, *, catalog_url: str | None = None,
         s.hardware = asdict(profile)
     store.change(commit)
     print("N.O.V.A. model stack updated. Previous models were kept.")
+
+    # PHASE 14 — recheck OpenCode (providers/models) without changing anything
+    # unless the user confirms.
+    recheck_opencode(path, store, confirm)
     return 0

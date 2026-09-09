@@ -49,9 +49,10 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.core.audit` | Audit log de ejecuciones de herramientas (`logs/audit.nova.jsonl`, JSON lines rotativo). |
 | `nova.llm.base` | Interfaz `LLMProvider` (chat, listado, health, embeddings) + tipos `ChatMessage`, `ChatCompletionRequest/Response`, `NOVAProviderError`. |
 | `nova.llm.ollama` | `OllamaProvider`: API compatible OpenAI (`/v1/chat/completions`), `/api/tags` y embeddings (`/api/embed`). |
+| `nova.llm.opencode` | `OpenCodeProvider` (PHASE 14): habla con el servidor HTTP de OpenCode (por defecto `http://127.0.0.1:4096`), sesión efímera por `chat()`; sin SDK ni API keys (auth delegada a OpenCode). |
 | `nova.llm.registry` | Registro de proveedores por nombre; `create_provider` es la única fábrica usada por todo el código. |
 | `nova.llm.resources` | `ResourceManager` (PHASE 7): snapshot best-effort de RAM/CPU/GPU/batería con readers inyectables. |
-| `nova.llm.router` | `ModelRouter` (PHASE 7): clasifica la tarea y elige modelo por complejidad + recursos + privacidad; `build_router` para el wiring. |
+| `nova.llm.router` | `ModelRouter` (PHASE 7 + 14): clasifica la tarea y elige **proveedor + modelo** por complejidad + recursos + privacidad; `build_router` con wires de `ai.mode`/`ai.privacy`/`open_code`. En HYBRID, las tareas `heavy` sin recursos locales pueden pasar a OpenCode (local-first, ADR-020). |
 | `nova.memory.store` | `MemoryStore`: SQLite local (hechos + trascripción de conversación, embeddings opcionales). |
 | `nova.memory.retriever` | Recuperación por similitud coseno sobre embeddings, con fallback a keywords. |
 | `nova.memory.service` | `MemoryService`: fachada `remember`/`record`/`search`/`context` para el CLI, la API y los Agents. |
@@ -77,14 +78,17 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 
 El resto del código **nunca** conoce a Ollama: solo depende de `nova.llm.base.LLMProvider` y del settings `llm.provider`. Añadir un proveedor = implementar la interfaz + `registry.register("nombre", Clase)`. Ver [decisions.md](decisions.md) ADR-003.
 
+PHASE 14: hay dos proveedores registrados — `ollama` (local, principal) y `opencode` (cloud, opcional en modo HYBRID). El código nunca habla con OpenCode por CLI; solo por `OpenCodeProvider`, y siempre vía el `ModelRouter` cuando la política de privacidad lo permite (ADR-020).
+
 ## Flujo de una conversación
 
 1. `nova.cli.chat` construye la sesión y pide entrada al usuario.
 2. `ChatSession` añade `user`, acota el historial y compone `ChatCompletionRequest`.
 3. `nova.memory` persiste el turno y recupera la memoria relevante (`MemoryService.context`), inyectada como mensaje `system` antes del turno del usuario (si la hay).
-4. `create_provider(settings.llm)` entrega el proveedor configurado.
-5. El proveedor envía la petición y devuelve `ChatCompletionResponse`.
-6. La respuesta se añade a la sesión, se persiste en la memoria y se muestra; todo se loggea.
+4. `create_provider(settings.llm)` entrega el proveedor local configurado; en HYBRID se crea además `OpenCodeProvider` si `open_code.enabled` y su servidor responde.
+5. `ModelRouter.route_for(text)` devuelve `RoutingDecision` (ahora con `provider`); el chat/API usa el provider elegido y, si falla, cae al otro (fallback bidireccional).
+6. El proveedor envía la petición y devuelve `ChatCompletionResponse`.
+7. La respuesta se añade a la sesión, se persiste en la memoria y se muestra; todo se loggea.
 
 > Si el proveedor soporta embeddings (`supports_embedding`), la recuperación usa similitud coseno sobre `nomic-embed-text`; si no, cae a keywords. La memoria nunca bloquea el chat.
 

@@ -58,6 +58,7 @@ class InstallationState(BaseModel):
     autostart: dict[str, str] = Field(default_factory=dict)
     hardware: dict = Field(default_factory=dict)
     stack: dict[str, str] = Field(default_factory=dict)
+    opencode_catalog: dict[str, str] = Field(default_factory=dict)
 
 
 def repository_roots(*starts: Path) -> list[Path]:

@@ -6,12 +6,12 @@ import sys
 from nova.agents import Agent, agent_presets, create_agent
 from nova.automation import AutomationExecutor, Scheduler
 from nova.core.audit import AuditLog
-from nova.core.config import load_settings
+from nova.core.config import AIMode, PrivacyPolicy, load_settings
 from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.base import ChatCompletionRequest, ChatMessage, NOVAProviderError
 from nova.llm.registry import create_provider
-from nova.llm.router import build_router
+from nova.llm.router import RoutingDecision, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.memory.retriever import MemoryHit
 from nova.plugins import load_plugin_tools
@@ -146,12 +146,29 @@ def main(argv: list[str] | None = None) -> int:
             print("Aviso: Ollama no responde. Arrancalo con `ollama serve`.")
 
     provider = create_provider(settings.llm)
+    # PHASE 14 — create cloud provider when hybrid mode is configured
+    cloud_provider = None
+    if settings.ai.mode == AIMode.hybrid and settings.open_code.enabled:
+        from nova.llm.opencode import OpenCodeProvider
+
+        cloud_provider = OpenCodeProvider(settings=settings.open_code)
+        if cloud_provider.health():
+            logger.info("opencode cloud provider: connected")
+        else:
+            logger.info("opencode cloud provider: not reachable (local-only fallback)")
+            cloud_provider = None
     session = ChatSession(
         max_history_messages=settings.session.max_history_messages,
         system_prompt=settings.session.system_prompt,
     )
     current_model = settings.llm.default_model
-    router = build_router(settings.llm, settings.model_router)
+    router = build_router(
+        settings.llm,
+        settings.model_router,
+        ai_mode=settings.ai.mode,
+        ai_privacy=settings.ai.privacy,
+        open_code=settings.open_code,
+    )
 
     memory = MemoryService(
         MemoryStore(settings.memory.db_file),
@@ -258,6 +275,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("user: %s", text)
         try:
             decision = router.route_for(text)
+            # PHASE 14 — route to the appropriate provider
+            active_provider = provider
+            if decision.provider == "opencode" and cloud_provider is not None:
+                active_provider = cloud_provider
             request = session.build_request(model=decision.model)
             context = memory.context(text)
             if context:
@@ -268,16 +289,36 @@ def main(argv: list[str] | None = None) -> int:
                     model=request.model,
                 )
                 logger.debug("injected memory context:\n%s", context)
-            response = provider.chat(request)
+            response = active_provider.chat(request)
         except NOVAProviderError as exc:
-            print(f"[nova error] {exc}")
-            logger.warning("nova error: %s", exc)
-            return None
+            # PHASE 14 — cloud->local fallback when the chosen provider fails
+            if active_provider is not provider:
+                logger.warning("cloud provider failed (%s); falling back to local", exc)
+                try:
+                    response = provider.chat(request)
+                    decision = RoutingDecision(
+                        task_kind=decision.task_kind,
+                        model=request.model,
+                        role=decision.role,
+                        reason=f"cloud failed ({exc}); fell back to local ({request.model})",
+                        provider="ollama",
+                    )
+                except NOVAProviderError as local_exc:
+                    print(f"[nova error] {local_exc}")
+                    logger.warning("local fallback failed: %s", local_exc)
+                    return None
+            else:
+                print(f"[nova error] {exc}")
+                logger.warning("nova error: %s", exc)
+                return None
         answer = response.message.content
         session.add_assistant(answer)
         memory.record("assistant", answer)
         print(f"N.O.V.A> {answer}")
-        logger.info("assistant (model=%s): %s", response.model, answer)
+        logger.info(
+            "assistant (provider=%s, model=%s): %s",
+            decision.provider, response.model, answer,
+        )
         return answer
 
     try:
@@ -331,7 +372,8 @@ def main(argv: list[str] | None = None) -> int:
                     decision = router.route_for(text)
                     print(
                         f"[route] {decision.task_kind} -> {decision.model} "
-                        f"(role={decision.role}). {decision.reason}"
+                        f"(provider={decision.provider}, role={decision.role}). "
+                        f"{decision.reason}"
                     )
                 elif command == "tools":
                     for tool in tools_registry.all():
@@ -510,6 +552,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         scheduler.stop()
         provider.close()
+        if cloud_provider is not None:
+            cloud_provider.close()
         memory.close()
         if voice is not None:
             voice.close()

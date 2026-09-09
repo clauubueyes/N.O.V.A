@@ -73,7 +73,7 @@ def _set(data: dict, key: str, value) -> bool:
     return True
 
 
-def provision_defaults(profile: MachineProfile | None = None) -> dict:
+def provision_defaults(profile: MachineProfile | None = None, ai_mode: str = "local") -> dict:
     """Build the recommended settings dict for the detected machine."""
     if profile is None:
         profile = MachineProfile(ram_total_gb=16, cpu_count=8, gpu_vram_gb=0.0, gpu_available=False, os_name="?", python="?")
@@ -91,7 +91,19 @@ def provision_defaults(profile: MachineProfile | None = None) -> dict:
         "timeout_s": 60.0,
         "models": catalog,
     }
-    data["model_router"] = {"min_ram_gb": 8.0, "battery": True, "cloud_enabled": False}
+    data["model_router"] = {"min_ram_gb": 8.0, "battery": True, "cloud_enabled": False, "strategy": "local-first"}
+    # PHASE 14 — AI mode (local by default; hybrid enables OpenCode fallback).
+    data["ai"] = {
+        "mode": ai_mode,
+        "privacy": "local_only" if ai_mode == "local" else "cloud_allowed",
+    }
+    data["open_code"] = {
+        "enabled": ai_mode == "hybrid",
+        "base_url": "http://127.0.0.1:4096",
+        "timeout_s": 120.0,
+        "default_model": "",
+        "models": {},
+    }
     data["permissions"] = {"autonomy": "ask", "allow": list(_SAFE_ALLOW), "deny": []}
     data["host"] = {"apps": dict(_DEFAULT_APPS), "commands": [], "roots": [], "working_dir": None, "timeout_s": 30.0}
     data["web"] = {"enabled": False}
@@ -119,11 +131,15 @@ def autoconfigure(
     enable_voice: bool = False,
     enable_web: bool = False,
     enable_automation: bool = False,
+    ai_mode: str = "local",
 ) -> ProvisionReport:
     """Merge safe computed defaults into the existing config (or create it).
 
     Never overwrites a value already present. `enable_*` toggles optional features
     (voice/web/plugins/automation) only when explicitly requested by the wizard.
+    `ai_mode` is "local" (default) or "hybrid"; when hybrid is requested the
+    provisioning also writes the `ai`/`open_code` sections (enabled only if
+    unset, exactly like every other secret-free default).
     """
     path = Path(path)
     from nova.setup.state import StateStore
@@ -132,7 +148,7 @@ def autoconfigure(
     store.load()
     created = ensure_config(path)[1]
     data = _load_yaml(path)
-    defaults = provision_defaults(profile)
+    defaults = provision_defaults(profile, ai_mode=ai_mode)
     from nova.core.paths import installation_home
 
     if path.resolve().is_relative_to(installation_home()):
@@ -150,6 +166,19 @@ def autoconfigure(
         if section not in data:
             data[section] = value
             changed.append(section)
+
+    # PHASE 14 — explicit AI mode change (only when the wizard decides it).
+    # The user consciously picked a mode, so this is a deliberate overwrite.
+    if ai_mode in ("local", "hybrid"):
+        current_mode = (data.get("ai") or {}).get("mode")
+        if current_mode != ai_mode:
+            data.setdefault("ai", {})["mode"] = ai_mode
+            data.setdefault("ai", {})["privacy"] = (
+                "local_only" if ai_mode == "local" else "cloud_allowed"
+            )
+            data.setdefault("open_code", {})["enabled"] = ai_mode == "hybrid"
+            changed.append("ai.mode")
+            changed.append("open_code.enabled")
 
     # Optional feature toggles (only flipped ON when explicitly requested).
     if enable_plugins and isinstance(data.get("plugins"), dict):

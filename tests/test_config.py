@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from nova.core.config import load_settings
+from nova.core.config import AIMode, PrivacyPolicy, load_settings
 
 
 def _clean_env(monkeypatch) -> None:
@@ -33,6 +33,14 @@ def test_defaults_when_no_config_file(tmp_path, monkeypatch) -> None:
     assert settings.model_router.battery is True
     assert settings.model_router.cloud_enabled is False
     assert settings.llm.models == {}
+    # PHASE 14 — safe defaults: local mode, local-only privacy, OpenCode disabled.
+    assert settings.ai.mode == AIMode.local
+    assert settings.ai.privacy == PrivacyPolicy.local_only
+    assert settings.open_code.enabled is False
+    assert settings.open_code.base_url == "http://127.0.0.1:4096"
+    assert settings.open_code.default_model == ""
+    assert settings.open_code.models == {}
+    assert settings.model_router.strategy == "local-first"
 
 
 def test_config_file_overrides_defaults(tmp_path, monkeypatch) -> None:
@@ -73,3 +81,33 @@ def test_env_variable_overrides_config(tmp_path, monkeypatch) -> None:
     assert settings.logging.level == "DEBUG"
     assert settings.memory.db_file == "other.db"
     assert settings.memory.max_context == 5
+
+
+def test_ai_and_opencode_from_config(tmp_path, monkeypatch) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "ai:\n  mode: hybrid\n  privacy: cloud_allowed\n"
+        "open_code:\n  enabled: true\n  base_url: http://127.0.0.1:4096\n"
+        "  default_model: gpt-4o-mini\n  models:\n    coding: gpt-4o\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(path=str(config))
+    assert settings.ai.mode == AIMode.hybrid
+    assert settings.ai.privacy == PrivacyPolicy.cloud_allowed
+    assert settings.open_code.enabled is True
+    assert settings.open_code.default_model == "gpt-4o-mini"
+    assert settings.open_code.models == {"coding": "gpt-4o"}
+
+
+def test_env_overrides_ai_and_opencode(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("NOVA_AI_MODE", "hybrid")
+    monkeypatch.setenv("NOVA_AI_PRIVACY", "cloud_allowed")
+    monkeypatch.setenv("NOVA_OPEN_CODE_ENABLED", "true")
+    monkeypatch.setenv("NOVA_OPEN_CODE_BASE_URL", "http://192.168.1.5:4096")
+    monkeypatch.setenv("NOVA_MODEL_ROUTER_STRATEGY", "local-first")
+    settings = load_settings(path=str(tmp_path / "missing.yaml"))
+    assert settings.ai.mode == AIMode.hybrid
+    assert settings.ai.privacy == PrivacyPolicy.cloud_allowed
+    assert settings.open_code.enabled is True
+    assert settings.open_code.base_url == "http://192.168.1.5:4096"
+    assert settings.model_router.strategy == "local-first"

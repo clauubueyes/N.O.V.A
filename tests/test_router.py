@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from nova.core.config import ModelRouterSettings
+from nova.core.config import AIMode, ModelRouterSettings, PrivacyPolicy
 from nova.llm.resources import ResourceManager, SystemResources
 from nova.llm.router import ModelRouter
 
@@ -15,6 +15,10 @@ def _router(
     embedding="nomic-embed-text",
     min_ram=8.0,
     battery=True,
+    ai_mode=AIMode.local,
+    ai_privacy=PrivacyPolicy.local_only,
+    cloud_catalog=None,
+    cloud_default="",
 ):
     return ModelRouter(
         settings=ModelRouterSettings(min_ram_gb=min_ram, battery=battery),
@@ -34,6 +38,10 @@ def _router(
             gpu_reader=lambda: (False, 0.0),
             battery_reader=lambda: (None, True),
         ),
+        ai_mode=ai_mode,
+        ai_privacy=ai_privacy,
+        cloud_catalog=cloud_catalog,
+        cloud_default_model=cloud_default,
     )
 
 
@@ -214,3 +222,96 @@ class TestOllamaSmoke:
             assert decision.model
         finally:
             provider.close()
+
+
+class TestHybridRouting:
+    """PHASE 14 — provider-aware decisions must never escape the privacy policy."""
+
+    CLOUD = {
+        "small": "openai/gpt-4o-mini",
+        "coding": "anthropic/claude-sonnet-4",
+        "local": "anthropic/claude-sonnet-4",
+        "reasoning": "openai/gpt-4o",
+        "vision": "openai/gpt-4o",
+    }
+
+    def test_local_mode_never_routes_to_cloud(self) -> None:
+        # local mode + constrained resources + cloud catalog: still ollama
+        d = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.local,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "ollama"
+        assert d.model == "llama3.2:1b"
+
+    def test_local_only_privacy_never_routes_to_cloud(self) -> None:
+        d = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.local_only,
+            cloud_catalog=self.CLOUD,
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "ollama"
+
+    def test_hybrid_cloud_allowed_routes_heavy_to_cloud_when_constrained(self) -> None:
+        d = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "opencode"
+        assert d.model == "anthropic/claude-sonnet-4"
+        assert "cloud" in d.reason
+
+    def test_hybrid_keeps_local_when_resources_are_ok(self) -> None:
+        d = _router(
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "ollama"
+        assert d.model == "llama3.1:8b"
+
+    def test_hybrid_without_cloud_catalog_stays_local(self) -> None:
+        d = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "ollama"
+        assert d.model == "llama3.2:1b"
+
+    def test_hybrid_uses_cloud_default_when_role_missing(self) -> None:
+        # cloud-only model for a kind with no explicit cloud entry
+        d = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog={"coding": "anthropic/claude-sonnet-4"},
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("haz un analisis complejo")
+        assert d.provider == "opencode"
+        assert d.model == "openai/gpt-4o-mini"
+
+    def test_simple_and_general_tasks_never_use_cloud(self) -> None:
+        simple = _router(
+            resources=_low_ram(),
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+            cloud_default="openai/gpt-4o-mini",
+        ).route_for("hola")
+        assert simple.provider == "ollama"
+        general = _router(
+            ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+        ).route_for("cuéntame una historia")
+        assert general.provider == "ollama"

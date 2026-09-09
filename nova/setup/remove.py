@@ -26,6 +26,7 @@ class RemovalPlan:
     blocked: list[str] = field(default_factory=list)
     remove_ollama: bool = False
     autostart: bool = False
+    notes: list[str] = field(default_factory=list)
 
 
 def removal_roots(state: InstallationState) -> list[Path]:
@@ -34,6 +35,13 @@ def removal_roots(state: InstallationState) -> list[Path]:
 
 def build_removal_plan(state: InstallationState) -> RemovalPlan:
     plan = RemovalPlan(autostart=bool(state.autostart))
+    # PHASE 14 — N.O.V.A. never installs or owns OpenCode. Any `ai`/`open_code`
+    # sections inside a N.O.V.A.-owned config count as N.O.V.A. resources, but the
+    # user's OpenCode install, credentials and external config are never touched.
+    plan.notes.append(
+        "OpenCode is never installed or owned by N.O.V.A.; only the N.O.V.A. "
+        "config sections (ai/open_code) are removed with the config file."
+    )
     roots = removal_roots(state)
     for resource in state.resources:
         try:
@@ -129,6 +137,8 @@ def run_remove(*, store: StateStore | None = None, confirm=None) -> int:
     print(f"  [REMOVE] installation journal: {store.path}")
     for item in plan.keep:
         print("[KEEP] " + item)
+    for item in plan.notes:
+        print("[NOTE] " + item)
     for item in plan.blocked:
         print("[WARN] " + item)
     print("The repository and source code WILL NOT be touched.")

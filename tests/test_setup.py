@@ -14,7 +14,9 @@ from nova.setup.autostart import AutostartError
 from nova.setup.detect import (
     MachineProfile,
     OllamaStatus,
+    OpenCodeStatus,
     detect_machine,
+    detect_opencode,
 )
 from nova.setup.models import (
     normalize_model_name,
@@ -105,6 +107,93 @@ def test_provision_defaults_are_safe():
     assert data["automation"]["enabled"] is False
     # Plugins are enabled but only the safe built-ins.
     assert data["plugins"]["enabled"] == ["text_tools", "units"]
+    # PHASE 14 — safe default: local mode, local-only privacy, OpenCode off.
+    assert data["ai"]["mode"] == "local"
+    assert data["ai"]["privacy"] == "local_only"
+    assert data["open_code"]["enabled"] is False
+
+
+def test_provision_defaults_hybrid_ai_mode():
+    data = provision_defaults(
+        MachineProfile(ram_total_gb=32, cpu_count=8, gpu_vram_gb=8, gpu_available=True, os_name="x", python="3"),
+        ai_mode="hybrid",
+    )
+    assert data["ai"]["mode"] == "hybrid"
+    assert data["ai"]["privacy"] == "cloud_allowed"
+    assert data["open_code"]["enabled"] is True
+    assert data["model_router"]["strategy"] == "local-first"
+
+
+def test_autoconfigure_hybrid_writes_ai_sections(tmp_path: Path):
+    """Auto-provisioning with hybrid mode must write ai/open_code and wire
+    privacy+enabled consistently."""
+    target = tmp_path / "config.yaml"
+    report = autoconfigure(
+        None,
+        path=target,
+        enable_plugins=True,
+        ai_mode="hybrid",
+    )
+    assert report.config_path
+    data = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert data["ai"]["mode"] == "hybrid"
+    assert data["ai"]["privacy"] == "cloud_allowed"
+    assert data["open_code"]["enabled"] is True
+
+
+def test_autoconfigure_explicit_ai_mode_switch(tmp_path: Path):
+    """Re-running setup with an explicit hybrid choice must update ai.mode even
+    when a previous local section exists (deliberate user override)."""
+    target = tmp_path / "config.yaml"
+    target.write_text("ai:\n  mode: local\n  privacy: local_only\n", encoding="utf-8")
+    autoconfigure(None, path=target, enable_plugins=True, ai_mode="hybrid")
+    data = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert data["ai"]["mode"] == "hybrid"
+    assert data["ai"]["privacy"] == "cloud_allowed"
+    assert data["open_code"]["enabled"] is True
+
+
+def test_detect_opencode_not_installed(monkeypatch):
+    import nova.setup.detect as D
+
+    monkeypatch.setattr(D, "_find_opencode_bin", lambda: None)
+    monkeypatch.setattr(D, "_url_reachable", lambda url, timeout=2.0: False)
+    st = detect_opencode()
+    assert isinstance(st, OpenCodeStatus)
+    assert st.installed is False
+    assert st.running is False
+    assert "not found" in st.message
+
+
+def test_detect_opencode_installed_running(monkeypatch):
+    import nova.setup.detect as D
+
+    monkeypatch.setattr(D, "_find_opencode_bin", lambda: "opencode.exe")
+    monkeypatch.setattr(D, "_run_command", lambda args, timeout=8.0: "opencode 0.1.0\n")
+    monkeypatch.setattr(D, "_url_reachable", lambda url, timeout=2.0: True)
+    monkeypatch.setattr(
+        D, "_opencode_modules",
+        lambda url, timeout=2.0: (["openai", "anthropic"], ["openai/gpt-4o", "anthropic/claude-3"], True),
+    )
+    st = detect_opencode()
+    assert st.installed is True
+    assert st.running is True
+    assert st.version == "opencode 0.1.0"
+    assert st.providers == ["openai", "anthropic"]
+    assert st.models == ["openai/gpt-4o", "anthropic/claude-3"]
+    assert st.configured is True
+
+
+def test_detect_opencode_installed_not_running(monkeypatch):
+    import nova.setup.detect as D
+
+    monkeypatch.setattr(D, "_find_opencode_bin", lambda: "opencode.exe")
+    monkeypatch.setattr(D, "_run_command", lambda args, timeout=8.0: "opencode 1.0.0\n")
+    monkeypatch.setattr(D, "_url_reachable", lambda url, timeout=2.0: False)
+    st = detect_opencode()
+    assert st.installed is True
+    assert st.running is False
+    assert "not running" in st.message
 
 
 def test_enable_flag_toggles(tmp_path: Path):
@@ -174,6 +263,7 @@ def test_assistant_greeting_flag(monkeypatch, tmp_path: Path):
         calls.append(text)
 
     monkeypatch.setattr(A, "_ask", ask)
+    monkeypatch.setattr(A, "_ask_ai_mode", lambda: "local")
     monkeypatch.setattr(A, "_say", say)
     monkeypatch.setattr(A, "_pull_models", lambda profile, **kwargs: [])
     from nova.setup import autostart as autostart_mod

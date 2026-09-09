@@ -64,6 +64,8 @@ def _ensure_vosk_model(config: str) -> None:
 
 
 def _do_doctor() -> int:
+    from nova.core.config import load_settings
+    from nova.setup.detect import detect_opencode
     from nova.setup.selector import plan_lines
 
     print("N.O.V.A. diagnostic\n" + "=" * 40)
@@ -81,6 +83,20 @@ def _do_doctor() -> int:
             print("Missing recommended:", ", ".join(sorted(missing)))
     else:
         print("No models installed. Run `nova setup`.")
+    # PHASE 14 — AI mode, privacy and OpenCode diagnostics
+    settings = load_settings()
+    mode = settings.ai.mode
+    privacy = settings.ai.privacy
+    print(f"AI mode: {mode.value} ({privacy.value})")
+    oc = detect_opencode(settings.open_code.base_url)
+    print("OpenCode:", oc.message)
+    if oc.running:
+        print("OpenCode providers:", ", ".join(oc.providers) or "none")
+        print("OpenCode models:", ", ".join(sorted(oc.models))[:200] or "none")
+    if mode == "hybrid" and privacy != "cloud_allowed":
+        print("[WARN] AI mode is hybrid but privacy is local_only: cloud fallback is disabled.")
+    if mode == "hybrid" and not oc.running:
+        print("[WARN] AI mode is hybrid but the OpenCode server is not reachable; all tasks stay local.")
     for line in plan_lines(profile):
         print(line)
     pkgs = detect_python_packages()

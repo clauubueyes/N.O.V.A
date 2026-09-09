@@ -11,7 +11,12 @@ installed and configured — can greet and speak through N.O.V.A. itself
 
 from pathlib import Path
 
-from nova.setup.detect import MachineProfile, detect_machine, detect_ollama
+from nova.setup.detect import (
+    MachineProfile,
+    detect_machine,
+    detect_ollama,
+    detect_opencode,
+)
 from nova.setup.models import default_model_for, missing_models
 from nova.setup.provision import autoconfigure
 from nova.setup.state import exclusive
@@ -44,6 +49,27 @@ def _ask(prompt: str, default: bool = True) -> bool:
     if not raw:
         return default
     return raw in ("y", "yes", "s", "si")
+
+
+def _ask_ai_mode() -> str:
+    """Let the user pick the AI mode: local, hybrid or configure later.
+
+    Never offers OpenCode as a requirement: N.O.V.A. never installs it and
+    hybrid stays optional. Hybrid is only suggested when OpenCode is detected,
+    so the user never buys into an unverifiable setup.
+    """
+    print(
+        "\nAI mode:\n"
+        "  [1] Local  - Ollama only, fully offline (recommended default)\n"
+        "  [2] Hybrid - Ollama first, OpenCode cloud fallback (optional)\n"
+        "  [3] Configure later"
+    )
+    selection = input("Select [1]: ").strip().lower()
+    if selection in ("2", "hybrid", "h", "mixto"):
+        return "hybrid"
+    if selection in ("3", "later", "l", "despues", "después"):
+        return "configure_later"
+    return "local"
 
 
 def _ollama_serve(profile: MachineProfile) -> bool:
@@ -201,7 +227,23 @@ def run_assistant(
         else:
             print("\nAll recommended models already present.")
 
-    # 3) Config
+    # 3) Helper for OpenCode status + AI mode
+    oc = detect_opencode()
+    ai_mode = "local"
+    if interactive and not auto:
+        print("\nOpenCode (optional cloud fallback): " + oc.message)
+        ai_mode = _ask_ai_mode()
+        if ai_mode == "hybrid" and not oc.running:
+            print(
+                "\n  [warn] OpenCode server is not running. N.O.V.A. will stay "
+                "LOCAL until the server answers at {}.".format(oc.base_url)
+            )
+            print(
+                "  [warn] N.O.V.A. never installs OpenCode; you install and run "
+                "it yourself (opencode.ai), then rerun `nova setup`."
+            )
+
+    # 4) Config
     report = autoconfigure(
         profile,
         path=config_path,
@@ -209,6 +251,7 @@ def run_assistant(
         enable_voice=False,
         enable_web=False,
         enable_automation=False,
+        ai_mode="local" if ai_mode == "configure_later" else ai_mode,
     )
     print(f"\nConfig ready: {report.config_path}")
     if report.changed:
@@ -217,7 +260,7 @@ def run_assistant(
         print("  (no changes - your config was already set up)")
     print(f"  Default model: {default_model_for(profile.ram_total_gb, profile.gpu_vram_gb).model}")
 
-    # 4) Optional autostart (interactive only)
+    # 5) Optional autostart (interactive only)
     autostart_enabled = False
     if interactive and _ask("Start N.O.V.A. automatically on login?", default=False):
         try:
@@ -228,7 +271,7 @@ def run_assistant(
         except Exception as exc:  # noqa: BLE001
             print(f"  Could not enable autostart: {exc}")
 
-    # 4) Optional spoken JARVIS-style greeting (best-effort, local TTS only)
+    # 6) Optional spoken JARVIS-style greeting (best-effort, local TTS only)
     greeted = False
     if interactive and _ask("Probar la voz local y recibir un saludo?", default=False):
         print("  Speaking...")
@@ -246,4 +289,6 @@ def run_assistant(
         "config": str(report.config_path),
         "autostart": autostart_enabled,
         "greeted": greeted,
+        "ai_mode": ai_mode,
+        "opencode": oc.message,
     }

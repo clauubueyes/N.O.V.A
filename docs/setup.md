@@ -143,6 +143,41 @@ $env:NOVA_LLM_DEFAULT_MODEL = "qwen2.5-coder:7b"   # PowerShell
 set NOVA_LLM_DEFAULT_MODEL=qwen2.5-coder:7b          # cmd
 ```
 
+### Modo de IA: LOCAL (defecto) y HYBRID (PHASE 14)
+
+N.O.V.A. es **local-first** (ADR-013): el modo por defecto es LOCAL (solo Ollama, offline, sin
+cuenta, sin llamadas externas). El modo HYBRID añade un **fallback cloud opcional** a través de
+OpenCode — N.O.V.A. **nunca instala OpenCode** ni gestiona tus credenciales: tú instalas y
+ejecutas OpenCode (opencode.ai) y N.O.V.A. habla con su servidor local (`http://127.0.0.1:4096`).
+
+```yaml
+ai:
+  mode: local        # local (defecto) | hybrid
+  privacy: local_only  # local_only (defecto) | cloud_allowed
+open_code:
+  enabled: false
+  base_url: http://127.0.0.1:4096   # servidor de OpenCode
+  timeout_s: 120.0
+  default_model: ""                 # modelo cloud genérico (formato "proveedor/modelo")
+  models: {}                        # catálogo cloud por rol (coding, reasoning...)
+model_router:
+  min_ram_gb: 8.0
+  battery: true
+  strategy: local-first
+```
+
+- **LOCAL + `local_only`** (defecto): todo queda en Ollama. Igual que hasta ahora, sin cambios.
+- **HYBRID + `cloud_allowed`**: solo las tareas **`heavy`** con recursos locales insuficientes
+  (RAM/VRAM/batería) pueden ir a cloud. Las tareas `simple`/`general` nunca salen del dispositivo.
+  El router decide proveedor + modelo y lo reporta (`/route` en el chat, `GET /v1/route` en la API).
+- En `hybrid`, si el servidor de OpenCode no responde o el proveedor falla, N.O.V.A. cae de nuevo a
+  local con un aviso en el log (fallback bidireccional).
+- Variables de entorno: `NOVA_AI_MODE`, `NOVA_AI_PRIVACY`, `NOVA_OPEN_CODE_ENABLED`,
+  `NOVA_OPEN_CODE_BASE_URL`, `NOVA_MODEL_ROUTER_STRATEGY`.
+
+`nova setup` te deja elegir Local/Hybrid/Configure later; `nova doctor` muestra el modo, la política
+de privacidad y el estado de OpenCode.
+
 ## Ejecución
 
 CLI interactivo (si Ollama está instalado pero apagado, se arranca solo):

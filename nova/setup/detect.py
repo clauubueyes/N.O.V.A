@@ -67,6 +67,20 @@ class MachineProfile:
         return lines
 
 
+@dataclass
+class OpenCodeStatus:
+    """PHASE 14 — OpenCode detection result."""
+
+    installed: bool = False
+    running: bool = False
+    version: str = ""
+    configured: bool = False
+    base_url: str = "http://127.0.0.1:4096"
+    providers: list[str] = field(default_factory=list)
+    models: list[str] = field(default_factory=list)
+    message: str = ""
+
+
 def _ram_total_windows() -> float:
     try:
         import ctypes
@@ -490,4 +504,90 @@ def ensure_ollama_running(
         time.sleep(0.5)
     status = detect_ollama(url)
     status.started_now = True
+    return status
+
+
+def _find_opencode_bin() -> str | None:
+    """Locate the `opencode` executable, on PATH or at common install locations."""
+    on_path = shutil.which("opencode")
+    if on_path:
+        return on_path
+    candidates = []
+    if sys.platform.startswith("win"):
+        candidates.append(
+            os.path.join(
+                os.environ.get("LOCALAPPDATA", ""),
+                "Programs", "opencode", "opencode.exe",
+            )
+        )
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _opencode_modules(url: str, timeout: float = 2.0) -> tuple[list[str], list[str], bool]:
+    """(providers, models, configured) best-effort via the OpenCode HTTP API."""
+    providers: list[str] = []
+    models: list[str] = []
+    configured = False
+    try:
+        import json
+        from urllib.request import Request, urlopen
+
+        with urlopen(Request(url + "/config/providers", method="GET"), timeout=timeout) as resp:
+            if resp.status < 500:
+                payload = json.loads(resp.read().decode("utf-8") or "{}")
+                if isinstance(payload, dict):
+                    config = payload.get("config") or payload
+                    if isinstance(config, dict):
+                        for key, value in config.items():
+                            if isinstance(value, dict):
+                                providers.append(key)
+                                configured = configured or bool(
+                                    value.get("apiKey")
+                                    or value.get("enabled")
+                                    or value.get("models")
+                                )
+                                ms = value.get("models") or []
+                                for m in ms:
+                                    if isinstance(m, dict) and m.get("id"):
+                                        models.append(f"{key}/{m['id']}")
+    except Exception:
+        pass
+    return providers, models, configured
+
+
+def detect_opencode(url: str = "http://127.0.0.1:4096") -> OpenCodeStatus:
+    """Best-effort PHASE 14 detection of an OpenCode installation.
+
+    Reports whether the `opencode` binary is on PATH (installed), whether its
+    server answers at `url` (running), and which providers/models it exposes.
+    Never modifies anything: reading configuration and health is safe.
+    """
+    bin_path = _find_opencode_bin()
+    status = OpenCodeStatus(
+        installed=bin_path is not None,
+        base_url=url,
+    )
+    if bin_path:
+        out = _run_command([bin_path, "--version"], timeout=6.0)
+        if out:
+            status.version = out.strip().splitlines()[0].strip()
+    if _url_reachable(url, timeout=2.0):
+        status.running = True
+        status.providers, status.models, status.configured = _opencode_modules(url)
+    providers = ", ".join(status.providers) if status.providers else "none"
+    if status.running:
+        status.message = (
+            f"OpenCode server is running at {url} "
+            f"(providers: {providers}, configured: {status.configured})"
+        )
+    elif status.installed:
+        status.message = (
+            "OpenCode binary found but the server is not running; "
+            "run `opencode` to start it"
+        )
+    else:
+        status.message = "OpenCode not found on PATH"
     return status

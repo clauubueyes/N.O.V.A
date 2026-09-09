@@ -18,6 +18,28 @@ class AutonomyLevel(str, Enum):
     full = "full"
 
 
+class AIMode(str, Enum):
+    """PHASE 14 — AI operating mode.
+
+    - local: Ollama only, no cloud dependency.
+    - hybrid: Ollama first, cloud fallback when needed.
+    """
+
+    local = "local"
+    hybrid = "hybrid"
+
+
+class PrivacyPolicy(str, Enum):
+    """PHASE 14 — data routing privacy policy.
+
+    - local_only: ALL tasks stay on Ollama. Cloud is never used.
+    - cloud_allowed: Local-first, cloud fallback permitted.
+    """
+
+    local_only = "local_only"
+    cloud_allowed = "cloud_allowed"
+
+
 class LLMSettings(BaseSettings):
     provider: str = "ollama"
     base_url: str = "http://localhost:11434"
@@ -30,18 +52,48 @@ class LLMSettings(BaseSettings):
     models: dict[str, str] = Field(default_factory=dict)
 
 
+class OpenCodeProviderSettings(BaseSettings):
+    """PHASE 14 — OpenCode cloud provider configuration.
+
+    When `ai.mode` is hybrid, OpenCode provides cloud fallback for tasks
+    that exceed local model capacity. OpenCode runs its own HTTP server
+    (default port 4096); N.O.V.A. talks to it over HTTP just like Ollama.
+    """
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:4096"
+    timeout_s: float = 120.0
+    default_model: str = ""
+    # Cloud model catalog keyed by task role (coding, reasoning, etc.)
+    models: dict[str, str] = Field(default_factory=dict)
+
+
 class ModelRouterSettings(BaseSettings):
-    """PHASE 7 — routing policy.
+    """PHASE 7 + 14 — routing policy.
 
     `min_ram_gb` is the threshold below which heavy models are avoided when a
     lightweight alternative exists; `battery` controls whether to downshift when
     on battery. `cloud_enabled` (ADR-013) is always False unless explicitly
     configured by the user; N.O.V.A. never depends on a cloud model.
+
+    PHASE 14: `strategy` controls hybrid routing behaviour.
     """
 
     min_ram_gb: float = 8.0
     battery: bool = True
     cloud_enabled: bool = False
+    strategy: str = "local-first"
+
+
+class AISettings(BaseSettings):
+    """PHASE 14 — top-level AI mode and privacy policy.
+
+    - `mode`: local (Ollama only) or hybrid (Ollama + cloud fallback).
+    - `privacy`: local_only (never cloud) or cloud_allowed (local-first, cloud fallback).
+    """
+
+    mode: AIMode = AIMode.local
+    privacy: PrivacyPolicy = PrivacyPolicy.local_only
 
 
 class LoggingSettings(BaseSettings):
@@ -290,6 +342,9 @@ class NovaSettings(BaseSettings):
     voice: VoiceSettings = VoiceSettings()
     plugins: PluginSettings = PluginSettings()
     automation: AutomationSettings = AutomationSettings()
+    # PHASE 14 — hybrid mode settings
+    ai: AISettings = AISettings()
+    open_code: OpenCodeProviderSettings = OpenCodeProviderSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {
@@ -305,6 +360,17 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "min_ram_gb": "min_ram_gb",
         "battery": "battery",
         "cloud_enabled": "cloud_enabled",
+        "strategy": "strategy",
+    },
+    "ai": {
+        "mode": "mode",
+        "privacy": "privacy",
+    },
+    "open_code": {
+        "enabled": "enabled",
+        "base_url": "base_url",
+        "timeout_s": "timeout_s",
+        "default_model": "default_model",
     },
     "logging": {
         "level": "level",

@@ -7,11 +7,13 @@ from nova.llm.base import (
     NOVAProviderError,
 )
 from nova.llm.ollama import OllamaProvider
+from nova.llm.opencode import OpenCodeProvider
 from nova.llm.registry import ProviderRegistry, create_provider, registry
 from nova.llm.resources import ResourceManager, SystemResources, default_resource_manager
 from nova.llm.router import ModelRouter, RoutingDecision, build_router
 
 registry.register("ollama", OllamaProvider)
+registry.register("opencode", OpenCodeProvider)
 
 __all__ = [
     "ChatCompletionRequest",
@@ -22,6 +24,7 @@ __all__ = [
     "ModelRouter",
     "NOVAProviderError",
     "OllamaProvider",
+    "OpenCodeProvider",
     "ProviderRegistry",
     "ResourceManager",
     "RoutingDecision",

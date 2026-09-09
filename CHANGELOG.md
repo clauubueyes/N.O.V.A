@@ -2,7 +2,26 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
-## [0.13.0] - 2026-09-08
+## [0.14.0] - 2026-09-09
+
+### Añadido — PHASE 14: Modo HYBRID / fallback cloud (OpenCode) local-first
+
+- Segundo proveedor opcional `opencode` bajo la misma interfaz `LLMProvider`
+  (`nova/llm/opencode.py`, HTTP contra el servidor de OpenCode, sin SDK ni API keys).
+- `OpenCodeProviderSettings`, `AISettings` (`ai.mode: local|hybrid`,
+  `ai.privacy: local_only|cloud_allowed`) y `ModelRouterSettings.strategy` en config + env `NOVA_*`.
+- `ModelRouter` elige **proveedor + modelo** (`RoutingDecision.provider`): en HYBRID las tareas
+  `heavy` con recursos locales insuficientes y política `cloud_allowed` pueden usar OpenCode;
+  `local_only` y modo `local` nunca salen de Ollama.
+- Fallback bidireccional local↔cloud en CLI (`nova`) y API (`/v1/chat`, sesiones); `/v1/route` y
+  `healthz` exponen el provider y el modo.
+- Detección de OpenCode (`detect_opencode`), elección Local/Hybrid/Configure-later en `nova setup`,
+  re-verificación en `nova-setup update` (catálogo cloud con confirmación) y transparencia de
+  ownership en `nova-setup remove` (nunca se toca la instalación/credenciales del usuario).
+- `nova doctor` diagnostica AI mode, privacidad y estado de OpenCode.
+- Tests: `tests/test_opencode.py`, `TestHybridRouting`, config/setup/detect ampliados.
+- ADR-020 en `docs/decisions.md`; docs actualizadas (README, setup, models, architecture,
+  security, api).
 
 ### Añadido — mantenimiento de la instalación local
 

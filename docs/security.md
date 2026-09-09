@@ -187,6 +187,24 @@ Reglas:
 - Secretos (tokens/keys) nunca en Git; se configuran por env (`NOVA_*`) o archivos ignorados
   (`.env`, `config/local.yaml`).
 
+## Modo HYBRID y privacidad (PHASE 14, ADR-020)
+
+El modo HYBRID es **opt-in y nunca rompe la privacidad por defecto**:
+
+- `ai.privacy` tiene dos valores: `local_only` (defecto, **nada** sale del dispositivo) y
+  `cloud_allowed` (permite fallback cloud **solo** para tareas `heavy` con recursos locales
+  insuficientes). Con `local_only` el fallback cloud no existe, aunque haya `open_code.models`.
+- N.O.V.A. **jamás instala OpenCode** ni lee/borra/escribe sus credenciales
+  (`~/.local/share/opencode/auth.json` o env del propio OpenCode): el auth lo gestiona OpenCode.
+  `nova-setup remove` solo elimina las secciones `ai`/`open_code` de su propio `config.yaml`.
+- La **memoria queda siempre local** (SQLite + embeddings Ollama); no se suben bases de datos de
+  memoria a cloud. A un proveedor cloud solo llega el prompt del turno y solo cuando la política lo
+  permite.
+- No se hardcodea una lista de modelos "gratuitos": si el coste de un modelo no es fiable, se
+  reporta `unknown` y el usuario decide.
+- El UI/`nova doctor` muestran el modo y la política actuales; `/route` y `GET /v1/route` muestran
+  el proveedor elegido y su razón.
+
 ## Regla contra las alucinaciones de capacidad
 
 N.O.V.A. solo afirma lo que puede hacer con sus herramientas. Si una capacidad no existe (p. ej.

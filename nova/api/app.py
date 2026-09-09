@@ -30,7 +30,7 @@ from nova.api.schemas import (
 )
 from nova.automation import AutomationExecutor, Scheduler
 from nova.core.audit import AuditLog
-from nova.core.config import NovaSettings, load_settings
+from nova.core.config import AIMode, NovaSettings, PrivacyPolicy, load_settings
 from nova.core.logging import get_logger
 from nova.core.session import ChatSession
 from nova.llm.base import (
@@ -39,6 +39,7 @@ from nova.llm.base import (
     LLMProvider,
     NOVAProviderError,
 )
+from nova.llm.opencode import OpenCodeProvider
 from nova.llm.registry import create_provider
 from nova.llm.router import ModelRouter, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
@@ -87,6 +88,7 @@ class AppState:
     scheduler: Scheduler | None = None
     executor: AutomationExecutor | None = None
     automation_memory: MemoryService | None = None
+    cloud_provider: LLMProvider | None = None
 
 
 def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
@@ -140,13 +142,30 @@ def create_app(
 
     provider = provider or create_provider(settings.llm)
 
+    # PHASE 14 — create cloud provider when hybrid mode is configured
+    cloud_provider: LLMProvider | None = None
+    if settings.ai.mode == AIMode.hybrid and settings.open_code.enabled:
+        op = OpenCodeProvider(settings=settings.open_code)
+        if op.health():
+            cloud_provider = op
+        else:
+            op.close()
+            logger.info("api: opencode not reachable; local-only fallback")
+
     state = AppState(
         settings=settings,
         provider=provider,
+        cloud_provider=cloud_provider,
         audit=AuditLog(settings.audit.file),
         permissions=PermissionSystem(settings.permissions),
     )
-    state.router: ModelRouter = build_router(settings.llm, settings.model_router)
+    state.router: ModelRouter = build_router(
+        settings.llm,
+        settings.model_router,
+        ai_mode=settings.ai.mode,
+        ai_privacy=settings.ai.privacy,
+        open_code=settings.open_code,
+    )
 
     automation_workflows = {wf.name: wf for wf in settings.automation.workflows}
 
@@ -205,6 +224,8 @@ def create_app(
         if state.automation_memory is not None:
             state.automation_memory.close()
         provider.close()
+        if state.cloud_provider is not None:
+            state.cloud_provider.close()
         for entry in state.sessions.values():
             entry.close()
         for entry in state.agents.values():
@@ -292,6 +313,9 @@ def create_app(
         return {
             "status": "ok" if provider.health() else "degraded",
             "provider": provider.health(),
+            "cloud_provider": cloud_provider.health() if cloud_provider is not None else None,
+            "ai_mode": settings.ai.mode,
+            "privacy": settings.ai.privacy,
             "version": __version__,
         }
 
@@ -363,6 +387,7 @@ def create_app(
         decision = state.router.route_for(text)
         return {
             "task_kind": decision.task_kind,
+            "provider": decision.provider,
             "role": decision.role,
             "model": decision.model,
             "reason": decision.reason,
@@ -401,16 +426,33 @@ def create_app(
     @app.post("/v1/chat", response_model=ChatResponse)
     def chat(req: ChatRequest) -> ChatResponse:
         try:
-            response = provider.chat(
+            text = req.messages[-1].content if req.messages else ""
+            decision = state.router.route_for(text)
+            active = state.cloud_provider if decision.provider == "opencode" and state.cloud_provider else provider
+            response = active.chat(
                 ChatCompletionRequest(
                     messages=[ChatMessage(role=m.role, content=m.content) for m in req.messages],
-                    model=req.model,
+                    model=req.model or decision.model,
                     temperature=req.temperature,
                     max_tokens=req.max_tokens,
                 )
             )
         except NOVAProviderError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            # Cloud failed -> fallback to local
+            if decision.provider == "opencode" and state.cloud_provider and provider.health():
+                try:
+                    response = provider.chat(
+                        ChatCompletionRequest(
+                            messages=[ChatMessage(role=m.role, content=m.content) for m in req.messages],
+                            model=req.model,
+                            temperature=req.temperature,
+                            max_tokens=req.max_tokens,
+                        )
+                    )
+                except NOVAProviderError as local_exc:
+                    raise HTTPException(status_code=502, detail=str(exc)) from exc
+            else:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
         return ChatResponse(
             id=uuid.uuid4().hex,
             model=response.model,
@@ -469,8 +511,10 @@ def create_app(
         entry.memory.record("user", req.message)
         if req.model:
             model = req.model
+            decision = None
         else:
-            model = state.router.route_for(req.message).model
+            decision = state.router.route_for(req.message)
+            model = decision.model
         try:
             request = entry.session.build_request(model=model)
             context = entry.memory.context(req.message)
@@ -481,9 +525,19 @@ def create_app(
                     + [request.messages[-1]],
                     model=request.model,
                 )
-            response = provider.chat(request)
+            active = provider
+            if decision is not None and decision.provider == "opencode" and state.cloud_provider:
+                active = state.cloud_provider
+            response = active.chat(request)
         except NOVAProviderError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            # Cloud failed -> fallback to local
+            if active is state.cloud_provider and provider.health():
+                try:
+                    response = provider.chat(request)
+                except NOVAProviderError:
+                    raise HTTPException(status_code=502, detail=str(exc)) from exc
+            else:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
         answer = response.message.content
         entry.session.add_assistant(answer)
         entry.memory.record("assistant", answer)

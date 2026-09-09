@@ -23,6 +23,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 12 Plugins | **PHASE 11 — Plugins** | ✅ |
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | ✅ |
 | — (setup/install) | **PHASE 13 — Setup/Install Wizard** | ✅ |
+| — (hybrid/cloud fallback) | **PHASE 14 — Modo HYBRID local-first (OpenCode)** | ✅ |
 
 ## PHASE 0 — Discovery ✅
 
@@ -248,6 +249,39 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 
 > El instalador es una capa de confort, no un bypass: los defaults que genera pasan por el mismo
 > Permission System + audit. Los permisos/autonomía nunca se elevan sin el consentimiento del usuario.
+
+## PHASE 14 — Modo HYBRID local-first (fallback cloud vía OpenCode) ✅
+
+Refuerza ADR-013/ADR-014 sin romper el modo LOCAL: reutiliza la abstracción `LLMProvider`
+(ADR-003), no crea sistemas paralelos y mantiene la privacidad por defecto.
+
+- [x] **Segundo proveedor `opencode`** (`nova/llm/opencode.py`): misma interfaz `LLMProvider`
+  (`chat`/`list_models`/`health`/`close`), HTTP contra el servidor de OpenCode
+  (`http://127.0.0.1:4096`), sesión efímera por `chat()`. Sin SDK ni API keys: el auth lo gestiona
+  el propio OpenCode (`~/.local/share/opencode/auth.json` o env). Registrado en el `ProviderRegistry`
+  existente (ADR-020).
+- [x] **Config sin duplicar**: `ai.mode` (`local`|`hybrid`) y `ai.privacy` (`local_only`|`cloud_allowed`),
+  más `open_code.*` y `model_router.strategy: local-first`. Defaults `local` + `local_only` = el modo
+  LOCAL actual byte a byte; overrides `NOVA_AI_MODE`, `NOVA_AI_PRIVACY`, `NOVA_OPEN_CODE_*`.
+- [x] **Model Router provider-aware** (`RoutingDecision.provider`): en HYBRID, solo una tarea
+  `heavy` con recursos locales insuficientes puede ir a cloud, y solo si privacy `cloud_allowed` y hay
+  modelo cloud mapeado (rol `local`/`reasoning` preferido, luego `default_model`). `simple`/`general`
+  nunca salen del dispositivo. `/v1/route` sigue compatible (añade `provider`).
+- [x] **Fallback bidireccional** en CLI (`nova`) y API (`/v1/chat`, sesiones): cloud->local si el
+  proveedor falla; si el local también falla -> error `502`. Desactivado por completo con
+  `local_only`.
+- [x] **Detección de OpenCode** (`detect_opencode` en `nova/setup/detect.py`): instalado/versión/
+  servidor/proveedores/configurado/models sin escribir nada.
+- [x] **Setup**: asistente pregunta Local/Hybrid/Configure-later; `provision_defaults`/`autoconfigure`
+  escriben `ai`/`open_code`; `nova-setup update` re-verifica OpenCode y ofrece refrescar el catálogo
+  cloud con confirmación; `nova-setup remove` documenta que OpenCode jamás se instala/toca
+  (ownership: solo se eliminan las secciones `ai`/`open_code` del config N.O.V.A.).
+- [x] **`nova doctor`**: muestra AI mode, privacy y estado de OpenCode (servidor, proveedores, modelos).
+- [x] Tests: `tests/test_opencode.py` (provider vía MockTransport), `TestHybridRouting` en
+  `tests/test_router.py`, y extensiones de `tests/test_config.py`/`tests/test_setup.py`.
+- [x] Docs: README, setup, models, architecture, security, api, decisions (ADR-020), CHANGELOG.
+- [ ] (Limitación conocida) El shape de `/session/{id}/message` y `/config/providers` se ajusta a la
+  documentación del servidor de OpenCode; verificado con MockTransport, no contra una instancia viva.
 
 ---
 

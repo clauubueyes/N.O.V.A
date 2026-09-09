@@ -14,6 +14,16 @@ model_router:
   min_ram_gb: 8.0
   battery: true
   cloud_enabled: false
+  strategy: local-first
+ai:
+  mode: local
+  privacy: local_only
+open_code:
+  enabled: false
+  base_url: http://127.0.0.1:4096
+  timeout_s: 120.0
+  default_model: ""
+  models: {}
 logging:
   level: INFO
   file: logs/nova.log

@@ -9,13 +9,13 @@ import pytest
 import yaml
 
 from nova.setup.catalog import SPECS_BY_ROLE, ModelSpec
-from nova.setup.detect import MachineProfile
+from nova.setup.detect import MachineProfile, OpenCodeStatus
 from nova.setup.models import normalize_model_name
 from nova.setup.ollama_lifecycle import OllamaSnapshot
 from nova.setup.remote_catalog import CatalogRefresh, parse_catalog, refresh_catalog
 from nova.setup.selector import select_stack
 from nova.setup.state import InstallationState, ManagedModel, OllamaOwnership, Resource, StateStore, check_removal_path
-from nova.setup.update import build_update_plan, run_update, write_stack
+from nova.setup.update import build_update_plan, recheck_opencode, run_update, write_stack
 from nova.setup.remove import build_removal_plan, run_remove
 
 
@@ -285,6 +285,67 @@ def test_remove_changed_managed_model_is_kept(tmp_path, monkeypatch):
     assert not deleted and have["nova:1b"] == "user-replaced"
 
 
+def opencode_update_environment(tmp_path, monkeypatch, *, mode="hybrid"):
+    import nova.setup.detect as detect
+
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump({"ai": {"mode": mode, "privacy": "cloud_allowed" if mode == "hybrid" else "local_only"},
+                                     "open_code": {"enabled": True, "base_url": "http://127.0.0.1:4096",
+                                                   "default_model": "", "models": {}},
+                                     "permissions": {"autonomy": "off"}}), encoding="utf-8")
+    store = StateStore(tmp_path / "state.json")
+    installed = False
+    status = lambda **kw: OpenCodeStatus(installed=installed, running=kw.get("running", False),
+                                         version=kw.get("version", ""), configured=kw.get("configured", False),
+                                         base_url="http://127.0.0.1:4096", providers=kw.get("providers", []),
+                                         models=kw.get("models", []), message=kw.get("message", ""))
+    monkeypatch.setattr(detect, "detect_opencode", lambda *a: status(**{"running": True,
+        "version": "1.0.0", "configured": True, "providers": ["openai-login"],
+        "models": ["openai-login/gpt-5", "anthropic-login/claude-sonnet-4"],
+        "message": "opencode-1.0.0 serving"}))
+    return config, store
+
+
+def test_update_recheck_opencode_hybrid_refreshes_catalog(tmp_path, monkeypatch):
+    config, store = opencode_update_environment(tmp_path, monkeypatch)
+    recheck_opencode(config, store, confirm=lambda *a, **k: True)
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert data["open_code"]["models"] == {"gpt-5": "openai-login/gpt-5",
+                                           "claude-sonnet-4": "anthropic-login/claude-sonnet-4"}
+    assert data["open_code"]["default_model"] == "gpt-5"
+    assert store.load().opencode_catalog == data["open_code"]["models"]
+
+
+def test_update_recheck_opencode_hybrid_without_confirm_keeps_config(tmp_path, monkeypatch):
+    config, store = opencode_update_environment(tmp_path, monkeypatch)
+    before = config.read_bytes()
+    recheck_opencode(config, store, confirm=lambda *a, **k: False)
+    assert config.read_bytes() == before
+    assert store.load() is None or not store.load().opencode_catalog
+
+
+def test_update_recheck_opencode_local_mode_never_touches_config(tmp_path, monkeypatch, capsys):
+    config, store = opencode_update_environment(tmp_path, monkeypatch, mode="local")
+    before = config.read_bytes()
+    recheck_opencode(config, store, confirm=lambda *a, **k: True)
+    assert config.read_bytes() == before
+    assert "LOCAL mode" in capsys.readouterr().out
+
+
+def test_update_recheck_opencode_not_running_is_advice_only(tmp_path, monkeypatch, capsys):
+    import nova.setup.detect as detect
+
+    config, store = opencode_update_environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(detect, "detect_opencode", lambda *a: OpenCodeStatus(
+        installed=True, running=False, version="1.0.0", configured=True,
+        base_url="http://127.0.0.1:4096", providers=[], models=[],
+        message="OpenCode binary found but the server is not running"))
+    before = config.read_bytes()
+    recheck_opencode(config, store, confirm=lambda *a, **k: pytest.fail("No confirmation expected"))
+    assert config.read_bytes() == before
+    assert "server is not running" in capsys.readouterr().out
+
+
 def test_remove_offline_preserves_journal_and_resources(tmp_path, monkeypatch):
     import nova.setup.remove as removal
 
@@ -292,6 +353,14 @@ def test_remove_offline_preserves_journal_and_resources(tmp_path, monkeypatch):
     monkeypatch.setattr(removal.ollama, "snapshot", lambda e: OllamaSnapshot())
     assert run_remove(store=store, confirm=lambda *a, **k: pytest.fail("Should block before confirmation")) == 1
     assert data.exists() and store.path.exists() and not deleted
+
+
+def test_removal_plan_notes_opencode_is_never_owned(tmp_path):
+    from nova.setup.remove import RemovalPlan, build_removal_plan
+    from nova.setup.state import InstallationState
+
+    plan: RemovalPlan = build_removal_plan(InstallationState())
+    assert any("OpenCode" in note and "never installed or owned" in note for note in plan.notes)
 
 
 def test_remove_never_touches_repository(tmp_path, monkeypatch):
