@@ -105,15 +105,15 @@ def test_no_gpu_needed_for_basic_stack():
     assert "reasoning" in _by_kind(select_stack(p, check_disk=False))
 
 
-def test_unreachable_hardware_never_raises_and_keeps_fallback():
-    """Missing detection data must degrade to a safe ULTRA_LIGHT stack."""
+def test_unreachable_hardware_never_installs_without_verified_capacity():
+    """Missing detection data must not manufacture a compatible recommendation."""
     p = MachineProfile(
         ram_total_gb=0.0, cpu_count=0, gpu_vram_gb=0.0, gpu_available=False,
         os_name="?", python="?", cpu_model="unknown",
     )
     stack = select_stack(p, check_disk=False)
     assert stack, "selector must still return a plan"
-    assert any(c.kind == "embedding" and c.install for c in stack)
+    assert not any(c.install for c in stack)
     assert any(c.kind == "general" for c in stack)
 
 

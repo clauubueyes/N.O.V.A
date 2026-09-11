@@ -194,7 +194,7 @@ class TestSessions:
             assert data["session_id"] == session_id
 
             messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
-            assert [m["role"] for m in messages] == ["system", "user", "assistant"]
+            assert [m["role"] for m in messages] == ["user", "assistant"]
             assert messages[-1]["content"] == "echo: cuentame algo"
 
     def test_session_chat_recovers_memory_context(self, tmp_path) -> None:
@@ -278,9 +278,8 @@ class TestSessionChatProviderError:
             client.post(f"/v1/sessions/{session_id}/chat", json={"message": "x"})
             messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
             roles = [m["role"] for m in messages]
-            # user turn was stored before the provider call, assistant was not
             assert "assistant" not in roles
-            assert "user" in roles
+            assert "user" not in roles
 
 
 class ScriptedAgentProvider(LLMProvider):

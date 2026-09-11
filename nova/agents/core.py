@@ -125,6 +125,10 @@ class Agent:
     def model(self) -> str | None:
         return self._model
 
+    @model.setter
+    def model(self, value: str | None) -> None:
+        self._model = value
+
     def _tools_prompt(self) -> str:
         lines = [
             "You can use the following tools to fulfill requests. Each tool has a JSON schema "

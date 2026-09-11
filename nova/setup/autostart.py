@@ -25,6 +25,8 @@ class AutostartError(Exception):
 def _launcher_command(target: str = "nova-agent") -> str | None:
     """Return the absolute command to launch `target`, or None if unavailable."""
     # Prefer an existing console script on PATH.
+    if target == 'nova-desktop' and getattr(sys, 'frozen', False):
+        return f'"{sys.executable}" --hidden'
     filename = target + (".exe" if sys.platform.startswith("win") else "")
     adjacent = Path(sys.executable).parent / filename
     exe = str(adjacent) if adjacent.exists() else shutil.which(filename)
@@ -32,7 +34,12 @@ def _launcher_command(target: str = "nova-agent") -> str | None:
         return f'"{exe}"'
     # Fall back to `python -m nova`-style entry.
     python = shutil.which(sys.executable) or sys.executable
-    module = {"nova": "nova", "nova-agent": "nova.desktop.agent", "nova-api": "nova.api.server"}.get(target)
+    module = {"nova": "nova", "nova-agent": "nova.desktop.agent", "nova-api": "nova.api.server", 'nova-desktop': 'nova.desktop'}.get(target)
+    if target == 'nova-desktop' and sys.platform == 'win32':
+        windowed = Path(python).with_name('pythonw.exe')
+        if windowed.exists():
+            python = str(windowed)
+        return f'"{python}" -m nova.desktop --hidden'
     return f'"{python}" -m {module}' if module else None
 
 

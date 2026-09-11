@@ -8,8 +8,8 @@ llm:
   models:
     embedding: nomic-embed-text
     local: llama3.1:8b
-    small: llama3.2:1b-instruct-q5_0
-    coding: qwen2.5-coder:1.5b-base-q5_0
+    small: llama3.2:1b
+    coding: qwen2.5-coder:1.5b
 model_router:
   min_ram_gb: 8.0
   battery: true

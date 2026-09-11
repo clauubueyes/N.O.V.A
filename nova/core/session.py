@@ -12,8 +12,14 @@ class ChatSession:
         if system_prompt:
             self._messages.append(ChatMessage(role="system", content=system_prompt))
 
-    def add_user(self, content: str) -> None:
-        self._append("user", content)
+    def add_user(self, content: str, images: list[str] | None = None) -> None:
+        self._messages.append(ChatMessage(role="user", content=content, images=images or []))
+        self._trim()
+
+    def restore(self, messages: list[ChatMessage]) -> None:
+        self.clear()
+        self._messages.extend(m for m in messages if m.role != "system")
+        self._trim()
 
     def add_assistant(self, content: str) -> None:
         self._append("assistant", content)

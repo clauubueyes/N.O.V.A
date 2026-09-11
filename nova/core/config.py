@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -113,6 +113,14 @@ class PermissionSettings(BaseSettings):
     autonomy: AutonomyLevel = AutonomyLevel.ask
     allow: list[str] = Field(default_factory=list)
     deny: list[str] = Field(default_factory=list)
+    categories: dict[Literal['reading', 'writing', 'applications', 'commands', 'system', 'remote'],
+                     Literal['allow', 'ask', 'deny']] = Field(default_factory=dict)
+
+
+class DesktopSettings(BaseSettings):
+    onboarding_complete: bool = False
+    mode: Literal['private', 'balanced', 'advanced'] = 'private'
+    prepared: bool = False
 
 
 class AuditSettings(BaseSettings):
@@ -345,6 +353,7 @@ class NovaSettings(BaseSettings):
     # PHASE 14 — hybrid mode settings
     ai: AISettings = AISettings()
     open_code: OpenCodeProviderSettings = OpenCodeProviderSettings()
+    desktop: DesktopSettings = DesktopSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {

@@ -261,13 +261,9 @@ def select_stack(profile: MachineProfile, check_disk: bool = False,
                 chosen, state, reasons = recommended[0]
             elif possible:
                 chosen, state, reasons = possible[0]
-                state = Availability.RECOMMENDED
-                reasons = [f"smallest usable {kind} model on this machine"]
             elif ranked:
                 chosen, state, reasons = min(ranked, key=lambda t: t[0].weights_gb)  # absolute fallback
-                state = Availability.RECOMMENDED
-                reasons = [f"last-resort {kind} model"]
-            install = chosen is not None
+            install = chosen is not None and state is not Availability.NOT_RECOMMENDED
         else:
             if recommended:
                 chosen, state, reasons = recommended[0]

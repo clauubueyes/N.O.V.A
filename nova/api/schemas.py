@@ -46,8 +46,9 @@ class SessionCreateRequest(BaseModel):
 
 
 class SessionChatRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=40000)
     model: str | None = None
+    attachments: list[str] = Field(default_factory=list, max_length=4)
 
 
 class SessionChatResponse(BaseModel):

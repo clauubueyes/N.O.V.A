@@ -1,5 +1,6 @@
 {
   "framework": null,
-  "rootDirectory": "web",
+  "outputDirectory": "web",
+  "buildCommand": "",
   "trailingSlash": false
 }

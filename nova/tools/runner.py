@@ -21,11 +21,13 @@ class ToolRunner:
         permissions: PermissionSystem,
         audit: AuditLog | None = None,
         confirm: Callable[[str], bool] | None = None,
+        confirm_action: Callable[[str, dict], bool] | None = None,
     ) -> None:
         self._registry = registry
         self._permissions = permissions
         self._audit = audit
         self._confirm = confirm or (lambda _question: False)
+        self._confirm_action = confirm_action
 
     @property
     def tools(self) -> list[BaseTool]:
@@ -46,7 +48,8 @@ class ToolRunner:
 
         if authorization.decision is PermissionDecision.ASK:
             prompt = self._prompt(tool, args)
-            granted = self._confirm(prompt)
+            granted = (self._confirm_action(tool.name, args or {}) if self._confirm_action
+                       else self._confirm(prompt))
             if not granted:
                 logger.warning("tool %s denied by user", tool.name)
                 self._audit_entry("ask:deny", tool.name, args, ok=False, message="denied by user")

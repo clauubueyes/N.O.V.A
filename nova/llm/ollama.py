@@ -197,3 +197,11 @@ class OllamaProvider(LLMProvider):
 
     def close(self) -> None:
         self._client.close()
+
+    def supports_images(self, model: str) -> bool:
+        try:
+            response = self._client.post('/api/show', json={'model': model})
+            response.raise_for_status()
+            return 'vision' in response.json().get('capabilities', [])
+        except (httpx.HTTPError, ValueError):
+            return False

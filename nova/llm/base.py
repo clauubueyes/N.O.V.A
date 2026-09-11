@@ -13,8 +13,14 @@ class NOVAProviderError(Exception):
 class ChatMessage:
     role: str
     content: str
+    images: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
+        if self.images:
+            return {"role": self.role, "content": [
+                {"type": "text", "text": self.content},
+                *[{"type": "image_url", "image_url": {"url": url}} for url in self.images],
+            ]}
         return {"role": self.role, "content": self.content}
 
 
@@ -67,3 +73,6 @@ class LLMProvider(ABC):
 
     def close(self) -> None:
         """Release provider resources. May be overridden."""
+
+    def supports_images(self, model: str) -> bool:
+        return False
