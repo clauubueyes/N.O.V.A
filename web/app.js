@@ -91,6 +91,29 @@ function renderMessage(role, content, cards = [], images = []) {
   if (role === "assistant") wrap.append(button("Copiar", () => navigator.clipboard.writeText(content).then(() => toast("Respuesta copiada.")), "copy"));
   outer.append(wrap); $("messages").append(outer); return outer;
 }
+function renderSources(steps, messageNode) {
+  if (!steps?.length || !messageNode) return;
+  const sources = [];
+  for (const step of steps) {
+    if (step.tool !== "web_search" || !step.ok || !step.data?.results?.length) continue;
+    for (const item of step.data.results) {
+      if (!item || typeof item.url !== "string" || !item.url) continue;
+      sources.push({title: item.title || item.url, url: item.url, snippet: item.snippet || ""});
+    }
+  }
+  if (!sources.length) return;
+  const block = el("div", undefined, "sources");
+  block.append(el("p", "Fuentes consultadas", "sources-label"));
+  for (const source of sources.slice(0, 8)) {
+    const card = el("a", undefined, "source-card");
+    card.href = source.url; card.target = "_blank"; card.rel = "noopener noreferrer";
+    card.append(el("span", source.title, "source-title"));
+    if (source.snippet) card.append(el("span", source.snippet, "source-snippet"));
+    card.append(el("span", source.url, "source-url"));
+    block.append(card);
+  }
+  messageNode.querySelector(".message-wrap").append(block);
+}
 async function openConversation(row) {
   if (busy) return;
   const data = await api("GET", "/v1/sessions/" + row.session_id + "/messages");
@@ -126,8 +149,9 @@ async function send(event) {
     userNode = renderMessage("user", message, pending.map(p => p.meta));
     thinking = el("div", "N.O.V.A. está pensando…", "thinking"); $("messages").append(thinking); scrollChat();
     const data = await api("POST", "/v1/sessions/" + current + "/chat", {message, model: $("model").value || null, attachments: pending.map(p => p.meta.id)});
-    thinking.remove(); renderMessage("assistant", data.reply);
+    thinking.remove(); const node = renderMessage("assistant", data.reply);
     if (data.steps?.length) { const details = el("details", undefined, "message"); details.append(el("summary", "Actividad de herramientas")); for (const step of data.steps) details.append(el("p", (step.ok ? "✓ " : "— ") + step.tool + ": " + step.message)); $("messages").append(details); }
+    renderSources(data.steps, node);
     $("message").value = ""; pending.forEach(p => p.url && URL.revokeObjectURL(p.url)); pending = []; renderAttachments();
     $("conversation-title").textContent = message.slice(0,70) || "Conversación con archivos";
     await refreshConversations(); scrollChat();
