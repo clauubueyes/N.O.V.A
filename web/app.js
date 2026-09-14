@@ -3,7 +3,8 @@ const $ = id => document.getElementById(id);
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 const params = new URLSearchParams(location.search);
 let apiBase = (params.get("api") || localStorage.getItem("nova.apiBase") || "").replace(/\/+$/, "");
-let token = sessionStorage.getItem("nova.token") || "";
+let token = params.get("token") || sessionStorage.getItem("nova.token") || "";
+if (params.get("token")) sessionStorage.setItem("nova.token", token);
 localStorage.removeItem("nova.token");
 let current = null, busy = false, pending = [], status = null, panelView = "", prepareTimer = null, approvalId = null, stick = true;
 const messagesEl = $("messages");
@@ -221,7 +222,16 @@ async function showSettings() {
   try{ const data=await api("GET","/v1/setup/status");check.checked=Boolean(data.autostart);}catch(e){}
   body.append(button("Guardar preferencias",async()=>{await api("PATCH","/v1/desktop/preferences",{mode:mode.value,model:select.value||null,autostart:autostartChanged?check.checked:null});await health();toast("Preferencias guardadas.");},"primary"));
   const links=el("div",undefined,"help-links");links.append(button("Modelos",showCatalog),button("Permisos",showPermissions),button("Diagnóstico",showStatus));body.append(links);
-  const remote=el("details");remote.append(el("summary","Otros dispositivos"),el("p","El acceso remoto todavía no está activado. Tus datos y acciones siguen en este ordenador. No necesitas abrir puertos."));body.append(remote);
+  const remote=el("details");remote.append(el("summary","Compartir acceso"));
+  if(apiBase&&token){
+    const shareUrl=location.origin+location.pathname+"?api="+encodeURIComponent(apiBase)+"&token="+encodeURIComponent(token);
+    remote.append(el("p","Enlace para abrir tu N.O.V.A. desde otro dispositivo. Comparte solo con quien confíes."));
+    const urlInput=el("input");urlInput.readOnly=true;urlInput.value=shareUrl;urlInput.className="field";urlInput.setAttribute("aria-label","Enlace de acceso");remote.append(urlInput);
+    remote.append(button("Copiar enlace",()=>navigator.clipboard.writeText(shareUrl).then(()=>toast("Enlace copiado."))));
+  }else{
+    remote.append(el("p","Conéctate primero a tu N.O.V.A. desde la sección «Conexión avanzada» para generar un enlace de acceso.","muted"));
+  }
+  body.append(remote);
   const advanced=el("details");advanced.append(el("summary","Conexión avanzada"));const url=el("input");url.value=apiBase;url.placeholder="Dirección de tu Core";url.setAttribute("aria-label","Dirección del Core");const key=el("input");key.type="password";key.value=token;key.placeholder="Clave de conexión";key.setAttribute("aria-label","Clave de conexión");const group=el("div",undefined,"field");group.append(url,key,button("Conectar",()=>{const value=url.value.trim().replace(/\/+$/,"");if(value){const parsed=new URL(value);if(!["https:","http:"].includes(parsed.protocol)||parsed.username||parsed.password)throw new Error("Usa una dirección HTTP local o HTTPS sin credenciales en la dirección.");}apiBase=value;token=key.value.trim();localStorage.setItem("nova.apiBase",apiBase);sessionStorage.setItem("nova.token",token);location.reload();}));advanced.append(group);body.append(advanced);
 }
 async function showPermissions() {
