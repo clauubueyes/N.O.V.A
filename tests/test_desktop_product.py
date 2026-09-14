@@ -18,7 +18,7 @@ from nova.core.attachments import AttachmentStore
 from nova.core.config import NovaSettings, PermissionSettings
 from nova.core.conversations import ConversationStore
 from nova.setup.bundle import install_bundle, sha256
-from nova.setup.desktop import Preparation, recommended_chat
+from nova.setup.desktop import Preparation, recommended_chat, recommended_vision
 from nova.setup.detect import MachineProfile
 from nova.tools.permissions import PermissionDecision, PermissionSystem
 from tests.test_api import FakeProvider, BoomProvider
@@ -174,6 +174,28 @@ def test_unknown_or_exhausted_hardware_never_selects_a_chat_model():
         recommended_chat(profile)
     with pytest.raises(ValueError):
         recommended_chat(replace(profile, ram_total_gb=32, ram_available_gb=1))
+
+
+def test_medium_machine_prefers_light_vision_model_when_big_one_doesnt_fit():
+    """11B needs 16 GB total; moondream fits comfortably."""
+    profile = MachineProfile(16, 8, 0, False, 'Windows', '3', cpu_model='x86_64', ram_available_gb=8)
+    spec = recommended_vision(profile)
+    assert spec is not None
+    assert spec.role == 'vision'
+    assert spec.name == 'moondream'
+
+
+def test_weak_machine_never_recommends_vision():
+    """Even the lightest vision model needs 4 GB total RAM."""
+    assert recommended_vision(MachineProfile(2, 1, 0, False, 'Windows', '3')) is None
+
+
+def test_poor_machine_still_gets_light_vision_when_possible():
+    """16 GB total with 6 GB free: moondream fits via POSSIBLE fallback."""
+    profile = MachineProfile(16, 8, 0, False, 'Windows', '3', cpu_model='x86_64', ram_available_gb=6)
+    spec = recommended_vision(profile)
+    assert spec is not None
+    assert spec.name == 'moondream'
 
 
 def test_attachment_paths_and_invalid_documents_are_rejected(tmp_path):

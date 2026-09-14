@@ -39,6 +39,20 @@ def recommended_chat(profile):
     raise ValueError('No hay suficiente memoria libre para un modelo local. Cierra otras aplicaciones y reintenta.')
 
 
+def recommended_vision(profile):
+    """Best vision model this machine can use: a RECOMMENDED one, else any light
+    (<5B) model that merely fits as POSSIBLE so image support stays cheap."""
+    cap = capability_profile(profile)
+    fallback = None
+    for spec in candidates('vision'):
+        state = evaluate(spec, cap)[0]
+        if state is Availability.RECOMMENDED:
+            return spec
+        if fallback is None and state is Availability.POSSIBLE and spec.params_b < 5.0:
+            fallback = spec
+    return fallback
+
+
 class Preparation:
     """One observable, resumable preparation operation; no synthetic percentage."""
 
@@ -92,6 +106,12 @@ class Preparation:
                          for s in candidates(kind) if s.name == model), None)
             if spec is None or evaluate(spec, capability_profile(profile))[0] is Availability.NOT_RECOMMENDED:
                 raise ValueError('Ese modelo no es adecuado para los recursos disponibles en tu ordenador.')
+        vision = None
+        if not model:
+            try:
+                vision = recommended_vision(profile)
+            except Exception:
+                vision = None
         detected = snapshot(endpoint)
         name = normalize_model_name(spec.name)
         volume = model_directory()
@@ -104,7 +124,8 @@ class Preparation:
                   dict(label=f'{profile.ram_total_gb:.0f} GB de memoria · modelo adecuado', ok=True),
                   dict(label=f'{free:.0f} GB de espacio disponible', ok=not needs_download or free >= spec.weights_gb + 12),
                   dict(label=profile.gpu_model or 'Procesador disponible · no necesitas una GPU', ok=True),
-                  dict(label='Conexión disponible' if network else 'Sin conexión', ok=network or not needs_download)]
+                  dict(label='Conexión disponible' if network else 'Sin conexión', ok=network or not needs_download),
+                  dict(label=f'Modelo de visión · {vision.name}' if vision else 'Modelo de visión no necesario aquí', ok=True)]
         self.emit(checks=checks, recommendation=dict(name=spec.name, size_gb=spec.weights_gb, parameters=spec.params_b),
                   hardware=asdict(profile))
         if needs_download and (free <= 0 or free < spec.weights_gb + 12):
@@ -168,3 +189,26 @@ class Preparation:
             else:
                 catalog[spec.role] = spec.name
         edit_configuration(self.config, commit)
+        if model is None and vision is not None:
+            try:
+                vname = normalize_model_name(vision.name)
+                if vname not in verified.models:
+                    self.stage('model', f'Descargando {vision.name}…')
+                    provider = OllamaProvider(settings.llm)
+                    try:
+                        final = provider.pull_model(vision.name, timeout=120,
+                            progress=lambda done, total, status: self.emit(completed=done, total=total or None))
+                    finally:
+                        provider.close()
+                    if final != 'success':
+                        raise ValueError('No hemos podido descargar el modelo de visión.')
+                    verified = snapshot(endpoint)
+                if verified.running and vname in verified.models:
+                    StateStore().record_model(vision.name, vision.role, endpoint,
+                                             owned=vname not in detected.models,
+                                             digest=verified.models[vname])
+                def vision_commit(data):
+                    data.setdefault('llm', {}).setdefault('models', {}).setdefault('vision', vision.name)
+                edit_configuration(self.config, vision_commit)
+            except Exception:
+                logger.warning('Setup continuó sin el modelo de visión complementario.', exc_info=True)

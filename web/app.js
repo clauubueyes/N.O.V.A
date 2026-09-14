@@ -22,6 +22,16 @@ function closeMobileSidebar() {
 }
 const isLocalPage = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const headers = () => token ? {Authorization: "Bearer " + token} : {};
+const coreProbeBases = ["http://localhost:8000", "http://127.0.0.1:8000"];
+async function probeLocalCore() {
+  for (const base of coreProbeBases) {
+    try {
+      const response = await fetch(base + "/healthz", {headers: headers()});
+      if (response.ok) return base;
+    } catch (e) {}
+  }
+  return null;
+}
 
 async function api(method, path, body) {
   const options = {method, headers: headers()};
@@ -31,7 +41,7 @@ async function api(method, path, body) {
   catch (e) { throw new Error("No podemos conectar con N.O.V.A. Abre la aplicación en tu ordenador y reintenta."); }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    const error = new Error(response.status === 401 ? "La conexión necesita autorización. Revisa Ajustes → Conexión." : response.status >= 500 ? "N.O.V.A. no ha podido completar esta acción. Reintenta o abre Diagnóstico." : typeof data.detail === "string" ? data.detail : "Revisa los datos e inténtalo de nuevo.");
+    const error = new Error(response.status === 401 ? "Introduce tu clave de conexión e inténtalo de nuevo." : response.status >= 500 ? "N.O.V.A. no ha podido completar esta acción. Reintenta o abre Diagnóstico." : typeof data.detail === "string" ? data.detail : "Revisa los datos e inténtalo de nuevo.");
     error.details = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || response.status);
     throw error;
   }
@@ -202,7 +212,34 @@ async function showLibrary(){const body=openPanel("Biblioteca","library");body.a
 async function showMemory(){const body=openPanel("Memoria","memory");body.append(el("p","Lo que N.O.V.A. recuerda para ayudarte. Puedes eliminar cualquier recuerdo."));const rows=await api("GET","/v1/desktop/memory");if(!rows.length)body.append(el("p","Todavía no hay recuerdos guardados. Usa el modo Con herramientas y pide a N.O.V.A. que recuerde una preferencia.","muted"));for(const memory of rows){const row=el("div",undefined,"list-row");row.append(el("span",memory.content),button("Olvidar",async()=>{if(await confirmAction("¿Olvidar este recuerdo?",memory.content)){await api("DELETE","/v1/desktop/memory/"+memory.id);await showMemory();}}));body.append(row);}}
 async function showTools(){const body=openPanel("Herramientas","tools");body.append(el("p","Activa Con herramientas en el chat para pedir acciones. Cada acción está sujeta a tus permisos."));const rows=await api("GET","/v1/tools");for(const tool of rows){const row=el("div",undefined,"list-row"),text=el("span",tool.name);text.append(el("small",tool.description));row.append(text);body.append(row);}body.append(button("Administrar permisos",showPermissions));const auto=await api("GET","/v1/automation");if(auto.workflows?.length){body.append(el("h3","Tareas guardadas"));for(const workflow of auto.workflows)body.append(button(workflow.name,async()=>{if(await confirmAction("¿Ejecutar tarea?",workflow.description||workflow.name)){const result=await api("POST","/v1/automation/workflows/"+encodeURIComponent(workflow.name)+"/run");toast(result.ok?"Tarea completada.":"La tarea no pudo completar todos los pasos.");}}));}}
 async function showStatus(){const body=openPanel("Estado de N.O.V.A.","status");try{await health();body.append(el("p",status.paused?"N.O.V.A. está en pausa.":"Tu núcleo local está conectado."),el("p","Versión "+status.version+" · "+status.model,"muted"),button(status.paused?"Reanudar":"Pausar",async()=>{await api("POST","/v1/desktop/pause",{paused:!status.paused});await showStatus();}),button("Comprobar y reparar",showPreparation));const details=el("details");details.append(el("summary","Diagnóstico técnico"));const pre=el("pre","Cargando…");details.append(pre);details.ontoggle=async()=>{if(details.open){try{pre.textContent=JSON.stringify(await api("GET","/v1/setup/status"),null,2);}catch(e){pre.textContent=e.message;}}};body.append(details);}catch(error){body.append(el("p",error.message),button("Reintentar",showStatus),button("Configurar conexión",showConnection));}}
-function showConnection(){const body=openPanel("Conecta tu N.O.V.A.","connection");body.append(el("p","Abre N.O.V.A. Desktop en tu ordenador para usar modelos, memoria y archivos locales. Esta web por sí sola no ejecuta el motor de IA."),el("p","El acceso desde el móvil llegará mediante emparejamiento seguro. No abras puertos del ordenador.","muted"));const group=el("div",undefined,"field"),url=el("input"),key=el("input");url.placeholder="Dirección del Core (configuración avanzada)";url.value=apiBase;url.setAttribute("aria-label","Dirección del Core");key.type="password";key.placeholder="Clave de conexión";key.setAttribute("aria-label","Clave de conexión");group.append(url,key,button("Conectar",()=>{const parsed=new URL(url.value);if(!["http:","https:"].includes(parsed.protocol)||parsed.username||parsed.password)throw new Error("Dirección no válida.");localStorage.setItem("nova.apiBase",url.value.replace(/\/+$/,""));sessionStorage.setItem("nova.token",key.value);location.reload();}));body.append(group);}
+let corePollTimer = null;
+function startCoreTap() {
+  const statusLine = $("core-status");
+  const frame = document.createElement("iframe"); frame.style.display = "none"; frame.setAttribute("aria-hidden", "true"); frame.src = "nova://start"; document.body.append(frame); setTimeout(() => frame.remove(), 2000);
+  statusLine.textContent = "Iniciando el servidor en tu ordenador…"; statusLine.hidden = false;
+  clearInterval(corePollTimer);
+  const deadline = Date.now() + 45000;
+  corePollTimer = setInterval(async () => {
+    const base = await probeLocalCore();
+    if (base) {
+      clearInterval(corePollTimer);
+      apiBase = base; localStorage.setItem("nova.apiBase", apiBase);
+      statusLine.textContent = "Conectado."; try { $("panel").close(); await afterConnect(); } catch (e) { fail(e); }
+      return;
+    }
+    if (Date.now() > deadline) {
+      clearInterval(corePollTimer);
+      statusLine.textContent = "No ha sido posible encenderlo. Si no ocurre nada, ejecuta «nova-setup protocol --enable 1» en tu ordenador y vuelve a intentarlo.";
+    }
+  }, 1500);
+}
+function showConnection(){
+  const body = openPanel("Conecta tu N.O.V.A.","connection");
+  body.append(el("p","N.O.V.A. vive en tu ordenador: modelos, memoria y archivos son locales. Esta web se conecta a él automáticamente cuando está encendido."));
+  body.append(button("Encender N.O.V.A. en este equipo", startCoreTap, "primary"));
+  const statusLine = el("p","", "muted"); statusLine.id = "core-status"; statusLine.hidden = true; body.append(statusLine);
+  body.append(el("p","El acceso remoto desde el móvil llegará mediante emparejamiento seguro. No abras puertos del ordenador.","muted"));
+  const group=el("div",undefined,"field"),url=el("input"),key=el("input");url.placeholder="Dirección del Core (configuración avanzada)";url.value=apiBase;url.setAttribute("aria-label","Dirección del Core");key.type="password";key.placeholder="Clave de conexión";key.setAttribute("aria-label","Clave de conexión");group.append(url,key,button("Conectar",()=>{const parsed=new URL(url.value);if(!["http:","https:"].includes(parsed.protocol)||parsed.username||parsed.password)throw new Error("Dirección no válida.");localStorage.setItem("nova.apiBase",url.value.replace(/\/+$/,""));sessionStorage.setItem("nova.token",key.value.trim());location.reload();}));body.append(group);}
 async function checkApprovals(){try{if(!status?.desktop)return;const data=await api("GET","/v1/desktop/permissions"),row=data.pending[0];if(!row){if($("approval").open)$("approval").close();approvalId=null;return;}if(approvalId===row.id)return;approvalId=row.id;$("approval-description").textContent="N.O.V.A. solicita usar: "+row.tool;$("approval-args").textContent=JSON.stringify(row.args,null,2);$("approval-always").hidden=!row.remember_allowed;$("approval-always").textContent="Recordar durante esta sesión";$("approval").showModal();}catch(e){}}
 async function resolveApproval(decision){if(!approvalId)return;await api("POST","/v1/desktop/permissions/"+approvalId,{decision});$("approval").close();approvalId=null;}
 window.novaNavigate=async view=>{const routes={new:newConversation,settings:showSettings,library:showLibrary,memory:showMemory,tools:showTools,status:showStatus};try{await(routes[view]||newConversation)();}catch(e){fail(e);}};
@@ -231,7 +268,16 @@ document.querySelectorAll("[data-suggest]").forEach(b=>b.onclick=()=>{$("message
 document.addEventListener("paste",e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();attachFiles(files).catch(fail);}});
 let dragDepth=0;document.addEventListener("dragenter",e=>{if(e.dataTransfer?.types.includes("Files")){e.preventDefault();dragDepth++;$("drop-hint").hidden=false;}});document.addEventListener("dragover",e=>e.preventDefault());document.addEventListener("dragleave",()=>{dragDepth--;if(dragDepth<=0)$("drop-hint").hidden=true;});document.addEventListener("drop",e=>{e.preventDefault();dragDepth=0;$("drop-hint").hidden=true;attachFiles([...e.dataTransfer.files]).catch(fail);});
 $("approval-once").onclick=()=>resolveApproval("once").catch(fail);$("approval-always").onclick=()=>resolveApproval("always").catch(fail);$("approval-cancel").onclick=()=>resolveApproval("cancel").catch(fail);$("approval").oncancel=e=>{e.preventDefault();resolveApproval("cancel").catch(fail);};
+async function afterConnect() {
+  try { await health(); await refreshConversations(); await loadModels().catch(()=>{}); syncSend(); if(!status.prepared)showPreparation(); else if(!status.onboarding_complete)showOnboarding(); }
+  catch(e){ $("connection-status").textContent="Sin conexión"; $("dot").className="dot bad"; $("hero-description").textContent="Abre N.O.V.A. en tu ordenador para empezar."; if(!token)showConnection(); else fail(e); }
+}
 async function boot(){
   if (localStorage.getItem("nova.sidebarCollapsed") === "1") $("app").classList.add("sidebar-collapsed");
-  if(!isLocalPage&&!apiBase){$("connection-status").textContent="Abre N.O.V.A. Desktop";showConnection();return;}try{await health();await refreshConversations();await loadModels().catch(()=>{});syncSend();if(!status.prepared)showPreparation();else if(!status.onboarding_complete)showOnboarding();}catch(e){$("connection-status").textContent="Sin conexión";$("dot").className="dot bad";$("hero-description").textContent="Abre N.O.V.A. en tu ordenador para empezar.";if(!token)showConnection();else fail(e);}}
+  if (!isLocalPage && !apiBase) {
+    apiBase = await probeLocalCore() || "";
+    if (!apiBase) { $("connection-status").textContent="Conecta tu N.O.V.A."; showConnection(); return; }
+    localStorage.setItem("nova.apiBase", apiBase);
+  }
+  await afterConnect(); }
 setInterval(()=>{if(status)health().catch(()=>{$("connection-status").textContent="Reconectando…";});},15000);setInterval(checkApprovals,1000);boot();

@@ -129,6 +129,8 @@ def _auth_middleware(settings: NovaSettings):
     token = settings.api.token
 
     async def middleware(request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
         if token and request.url.path.startswith("/v1/"):
             auth = request.headers.get("authorization", "")
             if not secrets.compare_digest(auth.encode(), f"Bearer {token}".encode()):
@@ -277,8 +279,11 @@ def create_app(
             if request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
                 return JSONResponse({'detail': 'Host no autorizado.'}, status_code=403)
             origin = request.headers.get('origin')
-            if origin and origin != str(request.base_url).rstrip('/'):
-                return JSONResponse({'detail': 'Origen no autorizado.'}, status_code=403)
+            if origin:
+                allowed = settings.api.cors_origins
+                same_host = origin == str(request.base_url).rstrip('/')
+                if not (same_host or origin in allowed):
+                    return JSONResponse({'detail': 'Origen no autorizado.'}, status_code=403)
         if request.url.path.startswith('/v1/') and request.method in ('POST', 'PUT', 'PATCH'):
             length = request.headers.get('content-length', '0')
             if not length.isdigit() or int(length) > 12 * 1024 * 1024:

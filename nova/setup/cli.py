@@ -196,6 +196,21 @@ def _do_autostart(args) -> int:
         return 1
 
 
+def _do_protocol(args) -> int:
+    from nova.setup.protocol import ProtocolError, protocol_status, set_protocol
+
+    try:
+        if args.enable is None:
+            print("Protocol nova://:", "registered" if protocol_status() else "not registered")
+            return 0
+        set_protocol(bool(args.enable))
+        print("Protocol nova://:", "registered" if args.enable else "removed")
+        return 0
+    except ProtocolError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nova setup",
@@ -237,6 +252,11 @@ def build_parser() -> argparse.ArgumentParser:
     toggle.add_argument("--disable", dest="enable", action="store_const", const=0)
     p_autostart.add_argument("--target", default="nova-agent",
                              help="entry point to run on login (default: nova-agent)")
+
+    p_protocol = sub.add_parser("protocol", help="register/remove the nova:// deep link that starts the server")
+    toggle_p = p_protocol.add_mutually_exclusive_group()
+    toggle_p.add_argument("--enable", type=int, choices=[0, 1], nargs="?", const=1, default=None,
+                          help="1 = register, 0 = remove (omit to query)")
 
     return parser
 
@@ -303,6 +323,13 @@ def _do_auto(args) -> int:
         elif not st.running:
             term.sub("Ollama not running; models not pulled (run `nova setup`).")
     term.section("Ready")
+    try:
+        from nova.setup.protocol import ProtocolError, set_protocol
+
+        set_protocol(True)
+        term.ok("nova:// deep link registered (web can start the server).")
+    except ProtocolError as exc:
+        term.warn(f"nova:// deep link not registered: {exc}")
     term.ok("Auto setup finished.")
     return 0
 
@@ -347,6 +374,8 @@ def _main(argv: list[str] | None = None) -> int:
         return _do_auto(args)
     if cmd == "autostart":
         return _do_autostart(args)
+    if cmd == "protocol":
+        return _do_protocol(args)
     # Default: interactive wizard (also `install` alias).
     config_path = args.config if hasattr(args, "config") else str(default_config_path())
     run_assistant(
