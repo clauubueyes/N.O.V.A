@@ -3,28 +3,64 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f5f6f8">
   <title>N.O.V.A. · Tu espacio</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
-  <aside id="sidebar" class="sidebar">
-    <a class="brand" href="#" aria-label="N.O.V.A., inicio"><span class="mark">N</span><span>N.O.V.A.<small>UN ESPACIO SOLO TUYO</small></span></a>
-    <button class="new" id="new"><span aria-hidden="true">＋</span> Nueva conversación</button>
-    <div class="section-label">CONVERSACIONES</div>
+<div class="scrim" id="scrim" hidden aria-hidden="true"></div>
+<div class="app" id="app">
+  <aside id="sidebar" class="sidebar" aria-label="Menú de N.O.V.A.">
+    <div class="sidebar-head">
+      <a class="brand" href="#" aria-label="N.O.V.A., inicio">
+        <span class="mark" aria-hidden="true">N</span>
+        <span class="brand-name">N.O.V.A.<small>UN ESPACIO SOLO TUYO</small></span>
+      </a>
+      <button class="icon collapse" id="collapse" aria-label="Contraer barra lateral" title="Contraer barra lateral">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 7-5 5 5 5M18 7l-5 5 5 5"/></svg>
+      </button>
+    </div>
+    <button class="new" id="new" title="Iniciar una nueva conversación">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Nueva conversación</span>
+    </button>
+    <div class="section-label">Conversaciones</div>
     <nav id="conversations" class="conversations" aria-label="Conversaciones"></nav>
     <nav class="navigation" aria-label="Principal">
-      <button data-view="library"><span aria-hidden="true">▤</span> Biblioteca</button>
-      <button data-view="memory"><span aria-hidden="true">◇</span> Memoria</button>
-      <button data-view="tools"><span aria-hidden="true">⌘</span> Herramientas</button>
-      <button data-view="settings"><span aria-hidden="true">⚙</span> Ajustes</button>
+      <button data-view="library" title="Biblioteca">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-17"/></svg>
+        <span>Biblioteca</span>
+      </button>
+      <button data-view="memory" title="Memoria">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>
+        <span>Memoria</span>
+      </button>
+      <button data-view="tools" title="Herramientas">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"/><path d="M14 2v4M8 10v4M16 18v4"/></svg>
+        <span>Herramientas</span>
+      </button>
+      <button data-view="settings" title="Ajustes">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Ajustes</span>
+      </button>
     </nav>
-    <button class="local-status" data-view="status"><span class="dot" id="dot"></span><span id="connection-status">Conectando…</span><span class="status-arrow">↗</span></button>
+    <button class="local-status" data-view="status" title="Estado de N.O.V.A.">
+      <span class="dot" id="dot"></span><span id="connection-status">Conectando…</span>
+      <span class="status-arrow">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>
+      </span>
+    </button>
   </aside>
   <main>
-    <header class="topbar"><button class="icon mobile-menu" id="menu" aria-label="Mostrar menú">☰</button><span id="conversation-title">Tu espacio</span><span class="privacy" id="privacy">◇ Privado y local</span></header>
+    <header class="topbar">
+      <button class="icon mobile-menu" id="menu" aria-label="Mostrar menú" title="Mostrar menú">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <span id="conversation-title">Tu espacio</span>
+      <span class="privacy" id="privacy">Privado y local</span>
+    </header>
     <div class="chat-stage" id="stage">
       <section class="hero" id="hero">
         <div class="hero-orbit" aria-hidden="true"><span>N</span></div>
@@ -32,25 +68,47 @@
         <h1>¿En qué puedo ayudarte?</h1>
         <p id="hero-description">Una idea, una pregunta o algo por descubrir.<br>Empecemos por lo que tienes en mente.</p>
         <div class="suggestions">
-          <button data-suggest="Ayúdame a desarrollar una idea">✧ <span>Explorar una idea</span></button>
-          <button id="suggest-image">▧ <span>Analizar una imagen</span></button>
-          <button id="suggest-file">▤ <span>Entender un archivo</span></button>
-          <button id="suggest-task">⌘ <span>Ejecutar una tarea</span></button>
+          <button data-suggest="Ayúdame a desarrollar una idea" title="Explorar una idea">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>
+            <span>Explorar una idea</span>
+          </button>
+          <button id="suggest-image" title="Analizar una imagen">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Analizar una imagen</span>
+          </button>
+          <button id="suggest-file" title="Entender un archivo">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+            <span>Entender un archivo</span>
+          </button>
+          <button id="suggest-task" title="Ejecutar una tarea">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+            <span>Ejecutar una tarea</span>
+          </button>
         </div>
       </section>
       <section class="messages" id="messages" aria-label="Conversación" aria-live="polite"></section>
+      <button class="jump" id="scroll-to-bottom" hidden aria-label="Ir al final de la conversación" title="Ir al final">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+        <span>Ir al final</span>
+      </button>
       <div class="composer-area">
         <div class="drop-hint" id="drop-hint" hidden>Suelta tus archivos aquí</div>
         <form class="composer" id="compose">
           <div class="attachments" id="attachments"></div>
-          <textarea id="message" rows="1" maxlength="40000" placeholder="Pregunta lo que quieras…" aria-label="Mensaje para N.O.V.A."></textarea>
+          <textarea id="message" rows="1" maxlength="40000" placeholder="Escribe un mensaje…" aria-label="Mensaje para N.O.V.A."></textarea>
           <div class="composer-toolbar">
-            <button type="button" class="icon" id="attach" aria-label="Adjuntar imágenes o archivos" title="Adjuntar">＋</button>
+            <button type="button" class="icon" id="attach" aria-label="Adjuntar imágenes o archivos" title="Adjuntar imágenes o archivos">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
             <select id="model" aria-label="Modelo"><option value="">Selección automática</option></select>
             <select id="agent" aria-label="Modo de herramientas"><option value="">Chat</option><option value="general">Con herramientas</option></select>
             <span class="spacer"></span>
-            <button type="button" class="icon" id="microphone" aria-label="Micrófono" hidden>♩</button>
-            <button type="submit" class="send" id="send" aria-label="Enviar mensaje">↑</button>
+            <button type="button" class="icon" id="microphone" aria-label="Micrófono" title="Micrófono" hidden>
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+            </button>
+            <button type="submit" class="send" id="send" aria-label="Enviar mensaje" title="Enviar (Intro)" disabled>
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+            </button>
           </div>
         </form>
         <p class="composer-note" id="composer-note">Tus conversaciones se guardan en este ordenador.</p>
@@ -59,7 +117,7 @@
   </main>
 </div>
 <input type="file" id="files" multiple hidden accept="image/*,.pdf,.docx,.txt,.md,.py,.js,.ts,.tsx,.jsx,.json,.yaml,.yml,.csv,.html,.css,.xml,.sql,.log,.toml,.ini,.java,.c,.cpp,.h,.rs,.go">
-<dialog id="panel"><header><h2 id="panel-title"></h2><button class="icon" id="panel-close" aria-label="Cerrar">×</button></header><div id="panel-body"></div></dialog>
+<dialog id="panel"><header><h2 id="panel-title"></h2><button class="icon" id="panel-close" aria-label="Cerrar" title="Cerrar"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header><div id="panel-body"></div></dialog>
 <dialog id="confirmation"><h2 id="confirmation-title"></h2><p id="confirmation-text"></p><div class="actions"><button id="confirm-no">Cancelar</button><button id="confirm-yes" class="primary">Continuar</button></div></dialog>
 <dialog id="approval"><p class="eyebrow">TÚ TIENES EL CONTROL</p><h2>Esta acción necesita autorización</h2><p id="approval-description"></p><pre id="approval-args"></pre><p class="muted">Solicitud local. La IA propone; tú decides.</p><div class="actions"><button id="approval-cancel">Cancelar</button><button id="approval-always">Recordar esta acción</button><button class="primary" id="approval-once">Autorizar una vez</button></div></dialog>
 <div class="toast" id="toast" role="alert" hidden></div>

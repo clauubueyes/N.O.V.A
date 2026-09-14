@@ -5,7 +5,21 @@ const params = new URLSearchParams(location.search);
 let apiBase = (params.get("api") || localStorage.getItem("nova.apiBase") || "").replace(/\/+$/, "");
 let token = sessionStorage.getItem("nova.token") || "";
 localStorage.removeItem("nova.token");
-let current = null, busy = false, pending = [], status = null, panelView = "", prepareTimer = null, approvalId = null;
+let current = null, busy = false, pending = [], status = null, panelView = "", prepareTimer = null, approvalId = null, stick = true;
+const messagesEl = $("messages");
+function syncSend() {
+  const has = $("message").value.trim() !== "" || pending.length > 0;
+  $("send").disabled = !has || busy;
+}
+function toggleSidebarCollapse() {
+  const app = $("app");
+  const collapsed = app.classList.toggle("sidebar-collapsed");
+  localStorage.setItem("nova.sidebarCollapsed", collapsed ? "1" : "0");
+}
+function closeMobileSidebar() {
+  $("sidebar").classList.remove("visible");
+  const scrim = $("scrim"); if (scrim) scrim.hidden = true;
+}
 const isLocalPage = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const headers = () => token ? {Authorization: "Bearer " + token} : {};
 
@@ -42,7 +56,7 @@ function confirmAction(title, message) {
 function newConversation() {
   if (busy) return;
   current = null; $("messages").replaceChildren(); $("hero").hidden = false;
-  $("conversation-title").textContent = "Tu espacio"; $("message").focus(); refreshConversations();
+  $("conversation-title").textContent = "Tu espacio"; stick = true; $("scroll-to-bottom").hidden = true; syncSend(); $("message").focus(); refreshConversations();
 }
 async function refreshConversations() {
   const rows = await api("GET", "/v1/sessions"); $("conversations").replaceChildren();
@@ -63,7 +77,7 @@ function renderMessage(role, content, cards = [], images = []) {
   const outer = el("article", undefined, "message " + role), wrap = el("div", undefined, "message-wrap");
   if (role === "assistant") wrap.append(el("div", "N.O.V.A.", "message-label"));
   wrap.append(el("div", content, "message-content"));
-  for (const card of cards) wrap.append(el("div", "▤ " + card.name, "attachment"));
+  for (const card of cards) { const chip = el("div", undefined, "message-attachment"); chip.append(el("span", card.name)); wrap.append(chip); }
   if (role === "assistant") wrap.append(button("Copiar", () => navigator.clipboard.writeText(content).then(() => toast("Respuesta copiada.")), "copy"));
   outer.append(wrap); $("messages").append(outer); return outer;
 }
@@ -73,9 +87,9 @@ async function openConversation(row) {
   current = row.session_id; $("agent").value = row.agent || ""; $("messages").replaceChildren();
   for (const m of data.messages) renderMessage(m.role, m.content, m.attachments || [], m.images || []);
   $("hero").hidden = data.messages.length > 0; $("conversation-title").textContent = row.title || "Conversación";
-  $("sidebar").classList.remove("visible"); await refreshConversations(); scrollChat();
+  closeMobileSidebar(); await refreshConversations(); stick = true; scrollChat(); syncSend();
 }
-function scrollChat() { $("messages").scrollTop = $("messages").scrollHeight; }
+function scrollChat() { if (stick) messagesEl.scrollTop = messagesEl.scrollHeight; }
 async function loadModels() {
   const previous = $("model").value; $("model").replaceChildren(new Option("Selección automática", ""));
   const models = await api("GET", "/v1/models");
@@ -84,7 +98,7 @@ async function loadModels() {
 }
 async function health() {
   status = await api("GET", "/v1/desktop/status");
-  $("privacy").textContent = status.privacy === "cloud_allowed" ? "◇ Servicios externos permitidos" : "◇ Privado y local";
+  $("privacy").replaceChildren(el("span", status.privacy === "cloud_allowed" ? "Servicios externos permitidos" : "Privado y local"));
   $("composer-note").textContent = status.privacy === "cloud_allowed" ? "Las funciones externas pueden recibir el contenido de la conversación. Los adjuntos se procesan localmente." : "Tus conversaciones se guardan en este ordenador.";
   const response = await api("GET", "/healthz");
   $("dot").className = "dot " + (response.status === "ok" && !status.paused ? "ok" : "bad");
@@ -108,15 +122,16 @@ async function send(event) {
     $("conversation-title").textContent = message.slice(0,70) || "Conversación con archivos";
     await refreshConversations(); scrollChat();
   } catch (error) { thinking?.remove(); userNode?.remove(); fail(error); }
-  finally { busy = false; $("send").disabled = false; $("agent").disabled = false; $("attach").disabled = false; $("message").focus(); }
+  finally { busy = false; syncSend(); $("agent").disabled = false; $("attach").disabled = false; $("message").focus(); }
 }
 function renderAttachments() {
   $("attachments").replaceChildren();
   pending.forEach((item,index) => {
     const card = el("div", undefined, "attachment");
-    if (item.url) { const image = el("img"); image.src = item.url; image.alt = "Vista previa de " + item.meta.name; card.append(image); }
+    if (item.url) { const image = el("img"); image.src = item.url; image.alt = "Vista previa de " + item.meta.name; card.append(image); card.classList.add("has-image"); }
     card.append(el("span", item.meta.name)); const remove = button("×", () => { if (busy) return; if(item.url) URL.revokeObjectURL(item.url); pending.splice(index,1); renderAttachments(); }); remove.setAttribute("aria-label", "Quitar " + item.meta.name); card.append(remove); $("attachments").append(card);
   });
+  syncSend();
 }
 function readFile(file) { return new Promise((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(",")[1]); reader.onerror = () => reject(new Error("No se ha podido leer el archivo.")); reader.readAsDataURL(file); }); }
 async function attachFiles(files) {
@@ -191,16 +206,32 @@ function showConnection(){const body=openPanel("Conecta tu N.O.V.A.","connection
 async function checkApprovals(){try{if(!status?.desktop)return;const data=await api("GET","/v1/desktop/permissions"),row=data.pending[0];if(!row){if($("approval").open)$("approval").close();approvalId=null;return;}if(approvalId===row.id)return;approvalId=row.id;$("approval-description").textContent="N.O.V.A. solicita usar: "+row.tool;$("approval-args").textContent=JSON.stringify(row.args,null,2);$("approval-always").hidden=!row.remember_allowed;$("approval-always").textContent="Recordar durante esta sesión";$("approval").showModal();}catch(e){}}
 async function resolveApproval(decision){if(!approvalId)return;await api("POST","/v1/desktop/permissions/"+approvalId,{decision});$("approval").close();approvalId=null;}
 window.novaNavigate=async view=>{const routes={new:newConversation,settings:showSettings,library:showLibrary,memory:showMemory,tools:showTools,status:showStatus};try{await(routes[view]||newConversation)();}catch(e){fail(e);}};
-$("compose").onsubmit=send;$("new").onclick=newConversation;$("agent").onchange=newConversation;$("menu").onclick=()=>$("sidebar").classList.toggle("visible");
+$("compose").onsubmit = send;
+$("new").onclick = newConversation;
+$("agent").onchange = newConversation;
+$("menu").onclick = () => { const open = $("sidebar").classList.toggle("visible"); $("scrim").hidden = !open; };
+$("scrim").onclick = closeMobileSidebar;
+$("collapse").onclick = toggleSidebarCollapse;
+document.addEventListener("keydown", e => { if (e.key === "Escape" && $("sidebar").classList.contains("visible")) closeMobileSidebar(); });
+messagesEl.addEventListener("scroll", () => {
+  const near = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+  $("scroll-to-bottom").hidden = near;
+  stick = near;
+}, {passive: true});
+$("scroll-to-bottom").onclick = () => { stick = true; messagesEl.scrollTo({top: messagesEl.scrollHeight, behavior: "smooth"}); $("scroll-to-bottom").hidden = true; };
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>window.novaNavigate(b.dataset.view));
 $("panel-close").onclick=()=>$("panel").close();$("panel").addEventListener("close",()=>{panelView="";clearTimeout(prepareTimer);});
 $("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("compose").requestSubmit();}});
-$("message").addEventListener("input",()=>{$("message").style.height="auto";$("message").style.height=Math.min($("message").scrollHeight,180)+"px";});
+$("message").addEventListener("input",()=>{$("message").style.height="auto";$("message").style.height=Math.min($("message").scrollHeight,200)+"px";syncSend();});
 $("attach").onclick=()=>$("files").click();$("files").onchange=e=>{attachFiles([...e.target.files]).catch(fail);e.target.value="";};
-$("suggest-image").onclick=()=>$("files").click();$("suggest-file").onclick=()=>$("files").click();$("suggest-task").onclick=()=>{$("agent").value="general";newConversation();$("message").value="Ayúdame con una tarea en mi ordenador: ";$("message").focus();};
-document.querySelectorAll("[data-suggest]").forEach(b=>b.onclick=()=>{$("message").value=b.dataset.suggest;$("message").focus();});
+$("suggest-image").onclick=()=>$("files").click();
+$("suggest-file").onclick=()=>$("files").click();
+$("suggest-task").onclick=()=>{$("agent").value="general";newConversation();$("message").value="Ayúdame con una tarea en mi ordenador: ";syncSend();$("message").focus();};
+document.querySelectorAll("[data-suggest]").forEach(b=>b.onclick=()=>{$("message").value=b.dataset.suggest;syncSend();$("message").focus();});
 document.addEventListener("paste",e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();attachFiles(files).catch(fail);}});
 let dragDepth=0;document.addEventListener("dragenter",e=>{if(e.dataTransfer?.types.includes("Files")){e.preventDefault();dragDepth++;$("drop-hint").hidden=false;}});document.addEventListener("dragover",e=>e.preventDefault());document.addEventListener("dragleave",()=>{dragDepth--;if(dragDepth<=0)$("drop-hint").hidden=true;});document.addEventListener("drop",e=>{e.preventDefault();dragDepth=0;$("drop-hint").hidden=true;attachFiles([...e.dataTransfer.files]).catch(fail);});
 $("approval-once").onclick=()=>resolveApproval("once").catch(fail);$("approval-always").onclick=()=>resolveApproval("always").catch(fail);$("approval-cancel").onclick=()=>resolveApproval("cancel").catch(fail);$("approval").oncancel=e=>{e.preventDefault();resolveApproval("cancel").catch(fail);};
-async function boot(){if(!isLocalPage&&!apiBase){$("connection-status").textContent="Abre N.O.V.A. Desktop";showConnection();return;}try{await health();await refreshConversations();await loadModels().catch(()=>{});if(!status.prepared)showPreparation();else if(!status.onboarding_complete)showOnboarding();}catch(e){$("connection-status").textContent="Sin conexión";$("dot").className="dot bad";$("hero-description").textContent="Abre N.O.V.A. en tu ordenador para empezar.";if(!token)showConnection();else fail(e);}}
+async function boot(){
+  if (localStorage.getItem("nova.sidebarCollapsed") === "1") $("app").classList.add("sidebar-collapsed");
+  if(!isLocalPage&&!apiBase){$("connection-status").textContent="Abre N.O.V.A. Desktop";showConnection();return;}try{await health();await refreshConversations();await loadModels().catch(()=>{});syncSend();if(!status.prepared)showPreparation();else if(!status.onboarding_complete)showOnboarding();}catch(e){$("connection-status").textContent="Sin conexión";$("dot").className="dot bad";$("hero-description").textContent="Abre N.O.V.A. en tu ordenador para empezar.";if(!token)showConnection();else fail(e);}}
 setInterval(()=>{if(status)health().catch(()=>{$("connection-status").textContent="Reconectando…";});},15000);setInterval(checkApprovals,1000);boot();
