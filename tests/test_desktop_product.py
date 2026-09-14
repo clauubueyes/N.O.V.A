@@ -135,6 +135,95 @@ def test_token_host_and_origin_guard(environment):
         assert 'list_files' in names
 
 
+class FakeTunnel:
+    def __init__(self, url='https://abc-123.trycloudflare.com'):
+        self._url = url
+        self._stopped = False
+
+    @property
+    def active(self):
+        return not self._stopped
+
+    @property
+    def url(self):
+        return self._url if not self._stopped else None
+
+    @property
+    def host(self):
+        return 'abc-123.trycloudflare.com' if not self._stopped else None
+
+    def start(self):
+        self._stopped = False
+        return self._url
+
+    def stop(self):
+        self._stopped = True
+
+
+def test_tunnel_start_stop_and_status(environment):
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        assert client.post('/v1/desktop/tunnel', json={'active': True}).json() == {
+            'active': True, 'url': 'https://abc-123.trycloudflare.com'}
+        assert client.get('/v1/desktop/tunnel').json()['active'] is True
+        assert client.post('/v1/desktop/tunnel', json={'active': False}).json() == {'active': False, 'url': None}
+        assert client.get('/v1/desktop/tunnel').json()['active'] is False
+
+
+def test_tunnel_host_allows_remote_requests(environment):
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        response = client.get('/v1/desktop/status', headers={'Host': 'abc-123.trycloudflare.com'})
+        assert response.status_code == 200, response.text
+        assert response.json()['remote']['enabled'] is True
+        assert response.json()['remote']['url'] == 'https://abc-123.trycloudflare.com'
+
+
+def test_tunnel_host_still_blocked_when_inactive(environment):
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        client.post('/v1/desktop/tunnel', json={'active': False})
+        assert client.get('/v1/desktop/status', headers={'Host': 'abc-123.trycloudflare.com'}).status_code == 403
+
+
+def test_tunnel_can_only_change_from_localhost(environment):
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        assert client.post('/v1/desktop/tunnel', json={'active': True},
+                           headers={'Host': 'abc-123.trycloudflare.com'}).status_code == 403
+        assert client.post('/v1/desktop/tunnel', json={'active': True}).json()['active'] is True
+
+
+def test_tunnel_missing_binary_returns_clear_error(environment, monkeypatch):
+    from nova.desktop import tunnel
+    monkeypatch.setattr(tunnel, 'cloudflared_binary', lambda: None)
+    with client_for(environment) as client:
+        response = client.post('/v1/desktop/tunnel', json={'active': True})
+        assert response.status_code == 400, response.text
+        assert 'cloudflared' in response.json()['detail']
+
+
+def test_tunnel_binary_parses_public_url(environment, monkeypatch):
+    import sys
+    from nova.desktop import tunnel
+    script = environment[1].parent / 'cloudflared-fake'
+    if sys.platform == 'win32':
+        script = script.with_suffix('.cmd')
+        content = '@echo off\r\necho 2026 your quick Tunnel has been created!\r\necho https://random-words-12.trycloudflare.com\r\nping -n 60 127.0.0.1 >nul\r\n'
+    else:
+        content = '#!/bin/sh\necho "2026 your quick Tunnel has been created!"\necho "https://random-words-12.trycloudflare.com"\nsleep 60\n'
+    script.write_text(content, encoding='utf-8')
+    if sys.platform != 'win32':
+        script.chmod(0o755)
+    monkeypatch.setattr(tunnel, 'cloudflared_binary', lambda: str(script))
+    manager = tunnel.TunnelManager(timeout=5)
+    assert manager.start() == 'https://random-words-12.trycloudflare.com'
+    assert manager.active
+    assert manager.host == 'random-words-12.trycloudflare.com'
+    manager.stop()
+    assert not manager.active
+
+
 def test_pause_rejects_new_chat(environment):
     with client_for(environment) as client:
         sid = client.post('/v1/sessions').json()['session_id']

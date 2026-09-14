@@ -224,10 +224,25 @@ async function showSettings() {
   const links=el("div",undefined,"help-links");links.append(button("Modelos",showCatalog),button("Permisos",showPermissions),button("Diagnóstico",showStatus));body.append(links);
   const remote=el("details");remote.append(el("summary","Compartir acceso"));
   if(apiBase&&token){
-    const shareUrl=location.origin+location.pathname+"?api="+encodeURIComponent(apiBase)+"&token="+encodeURIComponent(token);
     remote.append(el("p","Enlace para abrir tu N.O.V.A. desde otro dispositivo. Comparte solo con quien confíes."));
+    const shareUrl=location.origin+location.pathname+"?api="+encodeURIComponent(apiBase)+"&token="+encodeURIComponent(token);
     const urlInput=el("input");urlInput.readOnly=true;urlInput.value=shareUrl;urlInput.className="field";urlInput.setAttribute("aria-label","Enlace de acceso");remote.append(urlInput);
     remote.append(button("Copiar enlace",()=>navigator.clipboard.writeText(shareUrl).then(()=>toast("Enlace copiado."))));
+    try{
+      const tunnel=await api("GET","/v1/desktop/tunnel");
+      if(tunnel.active&&tunnel.url){
+        const publicUrl=tunnel.url+"/?api="+encodeURIComponent(tunnel.url)+"&token="+encodeURIComponent(token);
+        remote.append(el("p","Acceso remoto público activo. Este enlace funciona desde cualquier dispositivo con internet.","muted"));
+        const publicInput=el("input");publicInput.readOnly=true;publicInput.value=publicUrl;publicInput.className="field";publicInput.setAttribute("aria-label","Enlace público");remote.append(publicInput);
+        remote.append(button("Copiar enlace público",()=>navigator.clipboard.writeText(publicUrl).then(()=>toast("Enlace público copiado."))));
+        remote.append(button("Desactivar acceso público",async()=>{await api("POST","/v1/desktop/tunnel",{active:false});await showSettings();}));
+      }else{
+        remote.append(el("p","Mientras tu ordenador esté encendido, puedes crear un enlace público que funcione desde cualquier lugar.","muted"));
+        remote.append(button("Crear enlace público",async()=>{try{await api("POST","/v1/desktop/tunnel",{active:true});await showSettings();}catch(e){fail(e);}},"primary"));
+      }
+    }catch(e){
+      remote.append(el("p","Túnel no disponible. Verifica tu conexión e inténtalo de nuevo.","muted"));
+    }
   }else{
     remote.append(el("p","Conéctate primero a tu N.O.V.A. desde la sección «Conexión avanzada» para generar un enlace de acceso.","muted"));
   }

@@ -10,6 +10,7 @@ from nova import __version__
 from nova.core.config import PermissionSettings, load_settings
 from nova.core.paths import default_config_path
 from nova.desktop.configuration import edit_configuration
+from nova.desktop.tunnel import TunnelError, core_local_url
 from nova.llm.base import NOVAProviderError
 from nova.llm.router import build_router
 from nova.setup.catalog import SPECS_BY_ROLE
@@ -45,6 +46,10 @@ class PauseInput(BaseModel):
     paused: bool
 
 
+class TunnelInput(BaseModel):
+    active: bool
+
+
 def build_product_router(state, *, config_path: Path | None, desktop: bool) -> APIRouter:
     from nova.api.setup import _guard
 
@@ -71,13 +76,17 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
     @router.get('/status')
     def status():
         settings = state.settings
+        tunnel = state.tunnel
+        if tunnel and tunnel.active:
+            remote = dict(enabled=True, url=tunnel.url, message='Enlace público activo. Comparte el enlace desde Ajustes → Compartir acceso.')
+        else:
+            remote = dict(enabled=False, url=None, message='El acceso desde otros dispositivos no está activado. Puedes activarlo desde Ajustes → Compartir acceso.')
         return dict(version=__version__, desktop=desktop, paused=state.paused,
                     onboarding_complete=settings.desktop.onboarding_complete,
                     prepared=settings.desktop.prepared, mode=settings.desktop.mode,
                     model=settings.llm.default_model, privacy=settings.ai.privacy,
                     categories=settings.permissions.categories, roots=settings.host.roots,
-                    remote=dict(enabled=False, message='El acceso desde otros dispositivos aún no está activado.'),
-                    voice=False)
+                    remote=remote, voice=False)
 
     @router.patch('/preferences')
     def preferences(payload: PreferenceInput):
@@ -207,5 +216,28 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
             else:
                 state.scheduler.start(state.executor.run_task)
         return {'paused': state.paused}
+
+    @router.get('/tunnel')
+    def tunnel_status():
+        tunnel = state.tunnel
+        if not tunnel:
+            raise HTTPException(501, 'El acceso remoto no está disponible en esta edición.')
+        return dict(active=tunnel.active, url=tunnel.url)
+
+    @router.post('/tunnel')
+    def tunnel_toggle(payload: TunnelInput, request: Request):
+        if request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+            raise HTTPException(403, 'El acceso remoto solo puede activarse o desactivarse desde este ordenador.')
+        tunnel = state.tunnel
+        if not tunnel:
+            raise HTTPException(501, 'El acceso remoto no está disponible en esta edición.')
+        if payload.active:
+            try:
+                url = tunnel.start()
+            except TunnelError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            return dict(active=True, url=url)
+        tunnel.stop()
+        return dict(active=False, url=None)
 
     return router

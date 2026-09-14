@@ -101,6 +101,7 @@ class AppState:
     approvals: ApprovalBroker | None = None
     paused: bool = False
     session_lock: Any = field(default_factory=threading.RLock)
+    tunnel: Any = None
 
 
 def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
@@ -179,6 +180,8 @@ def create_app(
     state.attachments = AttachmentStore(Path(settings.memory.db_file).resolve().parent / 'attachments')
     if desktop:
         state.approvals = ApprovalBroker()
+        from nova.desktop.tunnel import TunnelManager
+        state.tunnel = TunnelManager()
     state.router: ModelRouter = build_router(
         settings.llm,
         settings.model_router,
@@ -247,6 +250,8 @@ def create_app(
             state.scheduler.stop()
         if state.automation_memory is not None:
             state.automation_memory.close()
+        if state.tunnel is not None:
+            state.tunnel.stop()
         provider.close()
         if state.cloud_provider is not None:
             state.cloud_provider.close()
@@ -276,13 +281,18 @@ def create_app(
     @app.middleware('http')
     async def product_guard(request: Request, call_next):
         if desktop:
-            if request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+            allowed_hosts = ('127.0.0.1', 'localhost', '::1')
+            tunnel_host = state.tunnel.host if state.tunnel else None
+            if tunnel_host:
+                allowed_hosts = allowed_hosts + (tunnel_host,)
+            if request.url.hostname not in allowed_hosts:
                 return JSONResponse({'detail': 'Host no autorizado.'}, status_code=403)
             origin = request.headers.get('origin')
             if origin:
                 allowed = settings.api.cors_origins
                 same_host = origin == str(request.base_url).rstrip('/')
-                if not (same_host or origin in allowed):
+                tunnel_origin = tunnel_host and origin.split('://', 1)[-1].split('/')[0] == tunnel_host
+                if not (same_host or origin in allowed or tunnel_origin):
                     return JSONResponse({'detail': 'Origen no autorizado.'}, status_code=403)
         if request.url.path.startswith('/v1/') and request.method in ('POST', 'PUT', 'PATCH'):
             length = request.headers.get('content-length', '0')
