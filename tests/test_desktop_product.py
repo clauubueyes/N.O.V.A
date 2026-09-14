@@ -179,6 +179,23 @@ def test_tunnel_host_allows_remote_requests(environment):
         assert response.json()['remote']['url'] == 'https://abc-123.trycloudflare.com'
 
 
+def test_tunnel_allows_foreign_frontend_origin(environment):
+    """La web de Vercel puede llamar al Core a través del túnel (cross-origin)."""
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        response = client.get('/v1/desktop/status',
+                              headers={'Host': 'abc-123.trycloudflare.com',
+                                       'Origin': 'https://web-eta-three-25.vercel.app'})
+        assert response.status_code == 200, response.text
+
+
+def test_tunnel_local_origin_still_rejected(environment):
+    """El check de origen sigue rigiendo para requests locales: un sitio ajeno no puede llamar localhost."""
+    with client_for(environment) as client:
+        client.app.state.nova.tunnel = FakeTunnel()
+        assert client.get('/v1/desktop/status', headers={'Origin': 'https://evil.example'}).status_code == 403
+
+
 def test_tunnel_host_still_blocked_when_inactive(environment):
     with client_for(environment) as client:
         client.app.state.nova.tunnel = FakeTunnel()

@@ -287,12 +287,12 @@ def create_app(
                 allowed_hosts = allowed_hosts + (tunnel_host,)
             if request.url.hostname not in allowed_hosts:
                 return JSONResponse({'detail': 'Host no autorizado.'}, status_code=403)
+            via_tunnel = tunnel_host and request.url.hostname == tunnel_host
             origin = request.headers.get('origin')
-            if origin:
+            if origin and not via_tunnel:
                 allowed = settings.api.cors_origins
                 same_host = origin == str(request.base_url).rstrip('/')
-                tunnel_origin = tunnel_host and origin.split('://', 1)[-1].split('/')[0] == tunnel_host
-                if not (same_host or origin in allowed or tunnel_origin):
+                if not (same_host or origin in allowed):
                     return JSONResponse({'detail': 'Origen no autorizado.'}, status_code=403)
         if request.url.path.startswith('/v1/') and request.method in ('POST', 'PUT', 'PATCH'):
             length = request.headers.get('content-length', '0')
