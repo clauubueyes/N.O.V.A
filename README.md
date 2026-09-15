@@ -4,7 +4,7 @@
 
 Tu asistente personal de IA. **Privado. Local. Tuyo.**
 
-N.O.V.A. es un asistente de IA completo que corre **en tu propio ordenador**. No necesitas cuentas de servicios externos, no pagas nada, y tus datos nunca salen de tu máquina. Piensa en algo como JARVIS, pero real, gratuito y tuyo.
+N.O.V.A. es un asistente de IA completo que corre **en tu propio ordenador**. No necesitas cuentas de servicios externos, no pagas nada, y tus datos nunca salen de tu máquina. 
 
 ---
 
