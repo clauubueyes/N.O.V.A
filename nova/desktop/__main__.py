@@ -30,7 +30,19 @@ def main() -> int:
     if args.prepare_report:
         from nova.desktop.configuration import initialize
         from nova.setup.desktop import Preparation
+        import ctypes
+        import ctypes.wintypes as wt
         import time
+
+        class MSG(ctypes.Structure):
+            _fields_ = [
+                ('hwnd', wt.HWND), ('message', wt.UINT),
+                ('wParam', wt.WPARAM), ('lParam', wt.LPARAM),
+                ('time', wt.DWORD), ('pt', wt.POINT),
+            ]
+
+        _user32 = ctypes.windll.user32
+        _msg = MSG()
         preparation = Preparation(initialize())
         preparation.start()
         report = Path(args.prepare_report)
@@ -42,6 +54,8 @@ def main() -> int:
             if result['status'] in ('ready', 'error'):
                 return 0 if result['status'] == 'ready' else 1
             time.sleep(0.25)
+            while _user32.PeekMessageW(ctypes.byref(_msg), 0, 0, 0, 1):
+                pass
     from nova.desktop.window import run_window
     return run_window(hidden=args.hidden)
 
