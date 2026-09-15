@@ -26,7 +26,7 @@ Todo corre en tu PC. La IA propone, N.O.V.A. decide y ejecuta bajo tu supervisi�
 
 Si solo quieres usar N.O.V.A. sin tocar código:
 
-1. **Descarga** `NOVA-Setup.exe` (~400 MB) — pídelo o búscalo en el repositorio
+1. **Descarga** [`NOVA-Setup.exe`](https://github.com/clauubueyes/N.O.V.A/releases/latest) (~400 MB) desde GitHub Releases
 2. **Ejecútalo** — no necesita Python ni nada instalado
 3. El instalador comprueba tu hardware, elige el mejor modelo para tu PC, y lo prepara automáticamente
 4. En unos minutos tienes N.O.V.A. lista
