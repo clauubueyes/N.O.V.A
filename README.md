@@ -2,324 +2,235 @@
 
 **N.O.V.A. = Neural Operations & Virtual Assistant**
 
-Asistente personal de IA moderno, **gratuito, local-first, privado y extensible**. Inspirado conceptualmente en asistentes como JARVIS, pero completamente original. La inteligencia de producto vive en el sistema (orquestación, memoria, herramientas, agentes, permisos, routing), no en un modelo propietario: N.O.V.A. **es sistema + modelos existentes** (locales, vía Ollama en primer lugar).
+Tu asistente personal de IA. **Privado. Local. Tuyo.**
 
-Estado actual: **PHASE 14 — Modo HYBRID / fallback cloud (OpenCode), local-first** (segundo proveedor opcional `opencode` bajo la misma interfaz `LLMProvider`, elección de proveedor + modelo por tarea/recursos/privacidad en el Model Router, política `ai.mode`/`ai.privacy`, detección y diagnóstico de OpenCode en `nova-setup`/`nova doctor`, fallback bidireccional local↔cloud, ownership en update/remove). Añadida sobre la **PHASE 13 — Setup/Install Wizard** (instalador automático `nova-setup` con detección de máquina RAM/GPU real, recomendación e instalación de los modelos Ollama adecuados, provision auto de `config.yaml` seguro, asistente guiado de primer arranque, autostart opcional y `nova doctor`), que a su vez suma sobre la PHASE 12 — Automatización (configuración, proveedor Ollama, conversación, contexto, logging, sistema de herramientas con permisos y audit, memoria persistente con recuperación por embeddings, API REST + interfaz web, agentes que seleccionan herramientas con el LLM como proponente, host tools seguras `open_app`/`open_url`/`run` + tools de archivos acotadas por `host.roots`, entry point `nova-agent`, **routing automático de modelo**, **acceso remoto con token + CORS + host tools**, **web tools controladas** con robots/rate-limit/separación LLM/Web, **voz 100% local** con STT Vosk + TTS pyttsx3 + wake word opcional — el audio nunca sale del dispositivo, **plugins** que añaden tools bajo el mismo Permission System + audit, y **automatización** con scheduler de tareas programadas + workflows multi-paso bajo los mismos permisos). El modo LOCAL (Ollama only, offline, sin cuenta) sigue siendo el default y funciona exactamente igual. Pendiente de la fase: nada — ver [docs/roadmap.md](docs/roadmap.md).
+N.O.V.A. es un asistente de IA completo que corre **en tu propio ordenador**. No necesitas cuentas de servicios externos, no pagas nada, y tus datos nunca salen de tu máquina. Piensa en algo como JARVIS, pero real, gratuito y tuyo.
 
-Distribuido bajo la licencia **MIT** (ver [LICENSE](LICENSE)). Libre de usar, modificar y distribuir.
+---
 
-## Principio fundamental
+## Qué puede hacer
 
-El modelo de IA **propone**; N.O.V.A. **decide** y los sistemas externos **ejecutan** bajo permisos. El LLM jamás tiene control directo e ilimitado del ordenador.
+- **Conversar** con modelos de IA locales (sin Internet, sin APIs de pago)
+- **Recordar** lo que le dices (memoria persistente entre sesiones)
+- **Buscar en Internet** (opcional, solo si tú lo activas)
+- **Ejecutar herramientas** (abrir apps, archivos, convertir unidades, etc.)
+- **Hablar** por voz (100% local, sin servicios externos)
+- **Compartir acceso** con otra persona vía un enlace temporal (sin configurar nada)
+- **Automatizar** tareas repetitivas con reglas y workflows
 
-```
-Usuario -> N.O.V.A. -> LLM (local) -> N.O.V.A. Core -> Permission System -> Tool -> Sistema -> Resultado -> N.O.V.A. -> Usuario
-```
+Todo corre en tu PC. La IA propone, N.O.V.A. decide y ejecuta bajo tu supervisión.
 
-## Compromiso: gratuito y privado
+---
 
-- N.O.V.A. **funciona sin APIs de pago**: la inferencia corre en el dispositivo del usuario (Ollama + modelos locales/OSS).
-- Los datos del usuario permanecen locales siempre que sea posible; nada sale del dispositivo sin consentimiento explícito.
-- Las APIs cloud son **integración opcional en el futuro**, solo si el usuario la configura; el Core nunca depende de ellas (ver [docs/security.md](docs/security.md) y [docs/models.md](docs/models.md)).
+## Instalación más fácil: un solo archivo
 
-## Quickstart
+Si solo quieres usar N.O.V.A. sin tocar código:
 
-### Instalador one-click (PHASE 13)
+1. **Descarga** `NOVA-Setup.exe` (~400 MB) — pídelo o búscalo en el repositorio
+2. **Ejecútalo** — no necesita Python ni nada instalado
+3. El instalador comprueba tu hardware, elige el mejor modelo para tu PC, y lo prepara automáticamente
+4. En unos minutos tienes N.O.V.A. lista
+
+Para quitarla: ejecuta `NOVA-Uninstall.exe` (está en la carpeta de instalación).
+
+> **Requisitos:** Windows 10 22H2+ (64 bits), 4+ GB de RAM, conexión a Internet solo la primera vez (para descargar el modelo).
+
+---
+
+## Instalación desde código (desarrolladores)
 
 ```powershell
-# Windows: crea venv, instala, arranca Ollama, detecta tu máquina,
-# descarga los modelos adecuados y escribe config.yaml
+# Clona el repositorio
+git clone https://github.com/clauubueyes/N.O.V.A
+cd N.O.V.A
+
+# Instala con el instalador automático (recomendado)
 .\install.ps1
 
-# con voz local y autostart:
-.\install.ps1 -Voice -Autostart
-
-# provisiona el config pero salta la descarga de modelos (~GBs):
-.\install.ps1 -NoModels
-```
-
-```bash
-# Linux/macOS
-./install.sh
-./install.sh --voice --autostart
-```
-
-### Manual
-
-```powershell
+# O manualmente
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 .\.venv\Scripts\nova
 ```
 
-### Instalador automático (PHASE 13) — `nova setup`
-
-El instalador detecta tu máquina (RAM real y VRAM de GPU en Windows), comprueba
-Ollama, **descarga los modelos adecuados a tu hardware** y escribe un
-`config/config.yaml` seguro y listo para usar — todo en un comando:
-
-```powershell
-.\.venv\Scripts\nova-setup          # asistente guiado (recomendado)
-.\.venv\Scripts\nova-setup auto     # bootstrap no interactivo
-.\.venv\Scripts\nova-setup doctor   # diagnóstico de salud
-.\.venv\Scripts\nova-setup install  # alias del asistente interactivo
-.\.venv\Scripts\nova-setup update   # reevaluar hardware, catálogo y stack
-.\.venv\Scripts\nova-setup remove   # revisar y confirmar eliminación de recursos propios
-.\.venv\Scripts\nova-setup autostart --enable 1   # arrancar N.O.V.A. al iniciar sesión
+```bash
+# Linux / macOS
+./install.sh
 ```
 
-Los instaladores automáticos nuevos usan `%LOCALAPPDATA%\NOVA\venv` en Windows
-y el directorio de datos de usuario equivalente en Linux/macOS; `.venv` se
-reserva para desarrollo. El mantenimiento registra qué pertenece a N.O.V.A.,
-conserva Ollama preexistente y protege el repositorio. Detalles de rutas,
-catálogo remoto y confirmaciones en [docs/lifecycle.md](docs/lifecycle.md).
+### Comandos principales
 
-Lo que hace, según el hardware detectado (heurística conservadora):
+| Comando | Qué hace |
+|---|---|
+| `nova` | Abre el chat en terminal |
+| `nova-desktop` | Abre la app de escritorio (Qt/PySide6) |
+| `nova-setup` | Asistente de instalación y configuración |
+| `nova-api` | Sirve la API REST + interfaz web |
+| `nova-agent` | Agente local (process background) |
 
-| RAM | GPU | Modelo por defecto | Stack |
-|---|---|---|---|
-| < 12 GB | — | `llama3.2:3b` | embedding + 3B + 1B |
-| ≥ 12 GB | — o ≥ 8 GB VRAM | `llama3.1:8b` | embedding + 8B + 1B + coder 7B |
+---
 
-Los defaults que escribe **respetan el modelo de seguridad** (ADR-013): herramientas
-denegadas por defecto, `web`/`voice`/`automation` apagados, plugins seguros
-(`text_tools`/`units`) activados, y nunca sobreescribe un valor que ya tuvieras en
-tu `config.yaml`. También puedes lanzarlo desde dentro del chat con `/setup` y
-diagnosticar con `/doctor`. Si la voz local está instalada, el asistente puede
-saludarte por TTS al terminar ("Bienvenido, señor...").
+## Cómo funciona (la idea fundamental)
 
-Voz (opcional, PHASE 10 — 100% local, sin APIs de pago):
-
-```powershell
-.\.venv\Scripts\python -m pip install -e ".[dev,voice]"   # vosk + pyttsx3 + sounddevice
+```
+Tú → N.O.V.A. → Modelo de IA (local) → N.O.V.A. Core → Permisos → Herramienta → Resultado → Tú
 ```
 
-Interfaz web y API REST:
+El modelo de IA **propone** qué hacer. N.O.V.A. **decide** si está permitido. Las herramientas **ejecutan** bajo permisos. El LLM nunca tiene control directo de tu ordenador.
 
-```powershell
-.\.venv\Scripts\nova-api     # sirve http://127.0.0.1:8000/ (UI) y /docs (OpenAPI)
-.\.venv\Scripts\nova-agent   # proceso local del Desktop Agent (PHASE 6; remoto opcional en PHASE 8)
-```
+---
 
-Ollama no hace falta tenerlo encendido a mano: `nova`, `nova-api` y `nova-agent` lo arrancan en segundo plano si está instalado pero apagado. Solo necesitas al menos un modelo, p. ej. `ollama pull llama3.1:8b`. Para la memoria (PHASE 3) además un modelo de embeddings: `ollama pull nomic-embed-text` (si falta, N.O.V.A. funciona igual con búsqueda por keywords). Para el routing de PHASE 7, descarga los que quieras en el catálogo: `ollama pull llama3.2:1b` (small) y `ollama pull qwen2.5-coder:7b` (coding).
+## Compartir acceso con alguien
 
-Prueba una herramienta dentro del chat:
+Si quieres que otra persona use tu N.O.V.A. a distancia:
+
+1. Abre Ajustes en la app de escritorio
+2. Haz clic en **"Crear enlace público"**
+3. Copia el enlace y envíaselo a quien quieras
+4. Esa persona abre el enlace en su navegador y ya puede chatear contigo
+
+No necesita instalar nada. No necesita clonar el repo. Solo un navegador.
+
+El enlace es temporal y se cierra cuando tú lo desactivas.
+
+---
+
+## Privacidad
+
+- **Todo es local**: el modelo de IA corre en tu PC, no en la nube
+- **Sin cuentas obligatorias**: funciona sin APIs de pago ni registros
+- **Tus datos son tuyos**: conversaciones, memoria y archivos quedan en tu máquina
+- **Nada sale sin tu permiso**: Internet solo se usa si activas las web tools o el túnel
+- **Tú controlas**: el Permission System decide qué herramientas puede usar la IA
+
+---
+
+## Modelo de seguridad
+
+N.O.V.A. tiene un sistema de permisos estricto:
+
+- Las herramientas peligrosas (ejecutar archivos, acceder a Internet) están **desactivadas por defecto**
+- Puedes activar herramientas específicas en `config/config.yaml`
+- Cada acción queda registrada en un log de auditoría
+- La IA nunca puede auto-otorgarse permisos
+
+---
+
+## Hardware mínimo recomendado
+
+| RAM | Modelo que se instala | Experiencia |
+|---|---|---|
+| 4–8 GB | llama3.2:3b | Rápido, básico |
+| 8–16 GB | llama3.1:8b | Equilibrado |
+| 16+ GB | llama3.1:8b + coder | Completo |
+
+El instalador automático detecta tu hardware y elige el mejor modelo.
+
+---
+
+## Modelos disponibles
+
+N.O.V.A. usa **Ollama** para ejecutar modelos locales. Puedes cambiar de modelo desde Ajustes o desde el chat:
 
 ```text
-/run calculate {"expression":"2+2"}
+/route escribe una función en python   # ver qué modelo se elige
+/catalog                                # listar modelos disponibles
 ```
 
-Guarda un hecho y recupéralo:
+---
 
-```text
-/remember me llamo Gabriel
-/memory Gabriel
-```
-
-N.O.V.A. guarda cada conversación y, cuando preguntes algo, inyecta automáticamente la memoria relevante como contexto.
-
-## Model Router (PHASE 7)
-
-El modelo se elige **por turno** según la tarea, los recursos disponibles y la privacidad (ADRs 013/014). El catálogo vive en `config/config.yaml` -> `llm.models` (`small`/`local`/`coding`/`vision`/`embedding`) y nunca en código; si un rol no está configurado se usa `default_model`.
-
-```text
-/route escribe una función en python   # muestra task_kind, role y modelo elegido
-/catalog                                # lista roles -> modelos
-```
-
-Con RAM por debajo de `model_router.min_ram_gb` (o batería baja sin AC), tareas pesadas/coding caen a `small`. En la API, `POST /v1/route` expone la misma decisión y las sesiones rutean por turno salvo que se pase `model` explícito.
-
-## Host (PHASE 6, paso 1)
-
-Herramientas de control del ordenador, **denegadas por defecto** y bajo el mismo Permission System + audit (CLI y `nova-agent`; en la API solo con `api.host_enabled: true` y token — PHASE 8):
-
-```text
-/run open_app {"app":"notepad"}       # lanza una app configurada en host.apps
-/run open_url {"url":"https://example.com"}   # solo http(s), rechaza esquemas peligrosos
-/run run {"command":"echo","args":["hola"]}   # solo comandos de host.commands, sin shell, con timeout
-/run read_file {"path":"..."}        # lee un archivo dentro de host.roots (solo lectura)
-/run list_files {"path":"..."}       # lista un directorio dentro de host.roots
-```
-
-- `open_app`: el LLM solo aporta el **nombre**; la ruta de la app vive en `config/config.yaml` -> `host.apps` (nunca una ruta arbitraria).
-- `run`: la **allowlist** `host.commands` es obligatoria — vacía = nada se ejecuta, incluso con `autonomy: full`. Elevación y comandos destructivos siempre bloqueados.
-- Archivos: `read_file`/`write_file`/`list_files` y el `cwd` de `run` **solo tocan rutas dentro de `host.roots`** (vacío = sin acceso al FS; los escapes `../`/symlinks se bloquean).
-- Cómo habilitar una app, comando o carpeta: ver [docs/security.md](docs/security.md) y `config/config.yaml`.
-
-## Acceso remoto (PHASE 8)
-
-Local de serie (`api.host: 127.0.0.1`), sin token. Para acceder desde el móvil/LAN o publicar un frontend estático:
-
-```yaml
-api:
-  host: 0.0.0.0              # LAN/móvil
-  token: "cambia-este-secreto"   # cada ruta /v1/* exigirá Authorization: Bearer <token>
-  host_enabled: true         # opcional: expone host tools (run/archivos) a la API — solo con token
-  cors_origins: "*"          # hosting estático (p. ej. Vercel) apuntando con ?api=<base>
-```
-
-- **Guarda dura (ADR-015)**: `host_enabled: true` sin token impide arrancar la API (`ValueError`).
-- **Nunca a Internet sin TLS**: usa un proxy reverso con certificado (Caddy/nginx/Cloudflare); sin TLS el token viaja en claro.
-- El **LLM nunca corre en serverless**: el frontend es un cliente estático; el backend (LLM + memoria + tools) vive solo en tu dispositivo.
-- Guía completa en [docs/setup.md](docs/setup.md) y límites en [docs/security.md](docs/security.md).
-
-## Web Tools (PHASE 9)
-
-El LLM accede a Internet **solo** a través de tools controladas (separación LLM / Web, ADR-016): `web_search`,
-`web_fetch` y `web_extract`. **Off por defecto** (`web.enabled: false`); al activarlas siguen bajo el
-Permission System (añádelas a `permissions.allow` o confírmalas en `ask`):
-
-```yaml
-web:
-  enabled: true
-  min_delay_s: 1.0       # rate limit por host
-  max_chars: 4000        # lo que ve el LLM por petición
-```
-
-```text
-/run web_search {"query":"mejores practicas python"}
-/run web_fetch {"url":"https://docs.python.org/es/3/"}
-/run web_extract {"url":"https://docs.python.org/es/3/"}
-```
-
-Cada petición pasa por: validación de URL (solo http(s), sin userinfo) -> `robots.txt` -> rate limit por
-host -> caps de bytes/caracteres, con User-Agent identificable. La búsqueda usa `web.search_url`
-(DuckDuckGo sin API key por defecto; permite SearXNG/Brave). Detalle en [docs/tools.md](docs/tools.md).
-
-## Plugins (PHASE 11)
-
-Los plugins añaden **tools** (nunca permisos) bajo el mismo `PermissionSystem` + audit (ADR-018).
-**Off por defecto** (`plugins.enabled` vacío). Actívalos en `config/config.yaml`:
-
-```yaml
-plugins:
-  enabled:
-    - text_tools      # base64 encode/decode, slugify, UUID
-    - units           # conversión de longitud/peso/temperatura
-  dir: null           # o carpeta con módulos *_plugin.py que expongan un objeto PLUGIN
-```
-
-```text
-/plugins                                # lista plugins cargados y sus tools
-/run text_slugify {"text":"Hola Mundo!"}
-/run convert_temperature {"value":100,"from_unit":"c","to_unit":"f"}
-```
-
-Las tools de plugins se deniegan por defecto igual que cualquier otra: añádelas a `permissions.allow`
-o confímalas en `ask`. En la API: `GET /v1/plugins`. Detalle en [docs/tools.md](docs/tools.md).
-
-## Automatización (PHASE 12)
-
-Tareas programadas (scheduler) y workflows multi-paso que corren bajo los **mismos** permisos que el
-chat: la automatización amplía el *horario*, nunca los permisos (ADR-019). **Off por defecto**
-(`automation.enabled: false`).
-
-```yaml
-automation:
-  enabled: true
-  poll_s: 1.0
-  tasks:
-    - name: heartbeat
-      schedule: {interval_s: 60}   # o at: "09:00" (una vez al día)
-      tool: date_time              # tool | agent(+text) | workflow
-  workflows:
-    - name: my_workflow
-      steps:
-        - tool: calculate
-          args: {expression: "2+2"}
-        - agent: general
-          text: "Resume el resultado."
-          on_error: continue       # stop (defecto) o continue por paso
-```
-
-En modo desatendido un permiso `ask` se **deniega** de forma segura: añade a `permissions.allow` las
-tools que vayan a ejecutar tus tareas/workflows.
-
-```text
-/automation           # estado del scheduler + próximas ejecuciones
-/workflows            # lista los workflows configurados
-/workflow my_workflow # ejecuta un workflow a mano
-```
-
-En la API: `GET /v1/automation`, `POST /v1/automation/workflows/{name}/run`,
-`POST /v1/automation/tasks/{name}/run`. Detalle en [docs/tools.md](docs/tools.md).
-
-## Voice (PHASE 10)
-
-Voz **100% local** (ADR-017): el audio jamás sale de tu dispositivo. STT con **Vosk** (modelo
-offline) y TTS con **pyttsx3** (voces del sistema). **Off por defecto** (`voice.enabled: false`).
-
-```text
-/voice               # bucle: habla, pulsa ENTER al terminar; /voice stop para salir
-/say hola            # habla una línea con TTS
-```
-
-La voz entra por el **mismo chat** que el teclado (memoria + router + tools + audit): vía `/voice`,
-el transcript se envía y la respuesta se habla. Opcional: `voice.wake_word: "nova"` hace que solo
-reaccione a mensajes que empiecen por esa palabra. Requiere instalar el extra `[voice]` y descargar un
-modelo Vosk; sin ellos N.O.V.A. funciona igual y `/voice` avisa de qué falta.
-
-## Agentes (PHASE 5)
-
-Los agentes dejan que el LLM **proponga** tools y N.O.V.A. las ejecute bajo el Permission System. Hay 5 presets: `general`, `coding`, `research`, `system` y `automation`.
-
-```text
-/agents                      # lista los presets
-/agent research qué sabemos del proyecto?
-/agent system qué fecha es hoy?
-```
-
-En la web usa el selector de agente; por API, `GET /v1/agents` y `POST /v1/agents/{name}/chat` (o crea una sesión con `{"agent": "coding"}`). El LLM responde con JSON estructurado (`{"tool": ..., "args": ...}`) o directamente; cada paso ejecutado aparece como `steps` y queda auditado.
-
-## Proyecto
+## Estructura del proyecto
 
 ```
-config/config.yaml    Configuración externa (modelos, permissions, audit, memory, api, host, router; nunca en código)
+config/config.yaml    Configuración (modelos, permisos, API, router)
 nova/
-  core/              Config, logging, contexto de conversación (ChatSession), audit log
-  llm/               LLMProvider (interfaz) + OllamaProvider (chat y embeddings) + registro + ResourceManager + ModelRouter (PHASE 7)
-  tools/             Herramientas (BaseTool + schemas) + Permission System + runner
-    host/            Host tools seguras: open_app/open_url/run + files acotados (PHASE 6)
-    web/             Web tools controladas: web_search/web_fetch/web_extract (PHASE 9)
-  plugins/           Interfaz Plugin + cargador + built-ins text_tools/units (PHASE 11)
-  automation/        Scheduler de tareas + workflows multi-paso bajo los mismos permisos (PHASE 12)
-  voice/             Voice local: STT Vosk + TTS pyttsx3 + mic — 100% local (PHASE 10)
-  setup/             Setup/instalador: detección de máquina, instalación de modelos,
-                     provision de config, asistente JARVIS, autostart (PHASE 13)
-  memory/            Memoria persistente (SQLite) + recuperación por embeddings (PHASE 3)
-  agents/            Agent + 5 presets paramétricos y tool-call por JSON estructurado (PHASE 5)
-  desktop/           Processo local nova-agent (base del Desktop Agent, PHASE 6)
-  api/               API REST (FastAPI) + endpoints de instalación /v1/setup + /v1/sessions (PHASE 4, 8)
-  cli/               Interfaz de conversación
-web/                 Frontend estilo ChatGPT desplegable en Vercel (sin build) + vercel.json (PHASE 13)
-docs/                Documentación del proyecto
-tests/               Tests pytest
+  core/              Config, logging, contexto, auditoría
+  llm/               Proveedor LLM (Ollama) + Model Router
+  tools/             Herramientas + Permission System
+  agents/            5 agentes paramétricos (general, coding, research, system, automation)
+  memory/            Memoria persistente SQLite + embeddings
+  desktop/           App de escritorio (PySide6/Qt) + túnel
+  api/               API REST (FastAPI) + frontend web
+  cli/               Chat por terminal
+  automation/        Scheduler + workflows
+  voice/             Voz 100% local (STT Vosk + TTS pyttsx3)
+  plugins/           Sistema de plugins extensible
+  setup/             Instalador y configurador
+web/                 Frontend web (HTML/CSS/JS, sin build)
+tests/               Tests (pytest)
+docs/                Documentación completa
+scripts/             Scripts de build (PyInstaller)
 ```
 
-Arquitectura actual:
+---
 
+## Para desarrolladores
+
+### Requisitos
+
+- Python 3.11+
+- Ollama (para modelos locales)
+- Windows, Linux o macOS
+
+### Instalación en desarrollo
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev,desktop]"
+.\.venv\Scripts\nova
 ```
-         N.O.V.A. Core
-      ┌──────┼──────┐
-   Memory  Agents  Tools
-      └──────┼──────┘
-        Model Router
-      ┌──────┼──────┐
-    Ollama  Locales  Cloud (SOLO si el usuario lo configura)
+
+### Tests
+
+```powershell
+.\.venv\Scripts\pytest          # ejecutar todos
+.\.venv\Scripts\pytest tests/test_desktop_product.py  # tests del desktop
 ```
+
+### Build del instalador Windows
+
+```powershell
+.\.venv\Scripts\python -m pip install -e ".[build,desktop]"
+.\.venv\Scripts\python scripts\build_windows.py
+# Produces: dist/NOVA-Setup.exe, dist/NOVA-Uninstall.exe
+```
+
+### Comandos de desarrollo
+
+| Comando | Qué hace |
+|---|---|
+| `nova` | Chat en terminal |
+| `nova-setup` | Configuración inicial |
+| `nova-setup doctor` | Diagnóstico del sistema |
+| `nova-api` | API REST + UI web en `http://127.0.0.1:8000` |
+| `nova-agent` | Agente local |
+
+---
 
 ## Documentación
 
 | Documento | Descripción |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | Arquitectura y capas (actual + objetivo) |
+| [docs/architecture.md](docs/architecture.md) | Arquitectura y capas |
 | [docs/roadmap.md](docs/roadmap.md) | Roadmap por fases |
 | [docs/setup.md](docs/setup.md) | Instalación y configuración |
 | [docs/development.md](docs/development.md) | Guía de desarrollo |
 | [docs/decisions.md](docs/decisions.md) | Decisiones arquitectónicas (ADR) |
 | [docs/security.md](docs/security.md) | Modelo de seguridad y permisos |
-| [docs/tools.md](docs/tools.md) | Catálogo de herramientas (estándar, memoria, host, web, plugins, automatización) |
+| [docs/tools.md](docs/tools.md) | Catálogo de herramientas |
 | [docs/models.md](docs/models.md) | Modelos y política de selección |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Problemas comunes |
 | [docs/api.md](docs/api.md) | APIs internas y externas |
+| [docs/desktop-product.md](docs/desktop-product.md) | Arquitectura del desktop |
+| [docs/lifecycle.md](docs/lifecycle.md) | Ciclo de vida e instalación |
 | [CHANGELOG.md](CHANGELOG.md) | Historial de cambios |
+
+---
+
+## Licencia
+
+MIT — libre de usar, modificar y distribuir. Ver [LICENSE](LICENSE).
+
+---
+
+**N.O.V.A.** — Neural Operations & Virtual Assistant. Tu IA, tu máquina, tus reglas.

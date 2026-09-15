@@ -2,6 +2,33 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.16.0] - 2026-09-14
+
+### Añadido — PHASE 15: Desktop Product + Acceso compartido
+
+- **Aplicación de escritorio** (`nova-desktop` / `NOVA.exe`): interfaz completa estilo chat con
+  sidebar de conversaciones, biblioteca, memoria, herramientas, configuración y modo privado.
+  Construida con PySide6/Qt + WebEngine; empaquetada con PyInstaller como `NOVA-Setup.exe`
+  (onefile, ~400 MB, sin dependencias de Python ni Node en el equipo destino).
+- **Instalador visual** (`NOVA-Setup.exe`): wizard gráfico en español con comprobación del
+  sistema, recomendación automática de modelo según hardware, instalación y preparación del
+  motor local. Incluye `NOVA-Uninstall.exe`.
+- **Túnel automático (cloudflared)**: compartir acceso remoto sin port-forwarding ni cuenta.
+  El Core descarga `cloudflared.exe` a `%LOCALAPPDATA%\NOVA\bin\` y genera un enlace público
+  temporal (`*.trycloudflare.com`) que sirve la webapp completa. Se activa/desactiva desde
+  Ajustes > Compartir acceso.
+- **Enlace de acceso compartido**: los enlaces incluyen token de autenticación vía URL params
+  (`?api=<tunnel>&token=<token>`); el invitado solo necesita abrir el enlace en un navegador.
+- **`product_guard` con soporte de túnel**: orígenes remotos (Vercel) permitidos cuando la
+  petición entra a través del túnel; el host del túnel solo se permite mientras está activo;
+  toggle de activación solo desde loopback (el invitado no puede desactivar el túnel).
+- **Endpoints**: `GET /v1/desktop/tunnel` (estado), `POST /v1/desktop/tunnel` (activar/desactivar),
+  `GET /v1/desktop/status` refleja el estado real del túnel en el campo `remote`.
+- **Frontend**: Ajustes > Compartir acceso con botón "Crear enlace público", campo de enlace
+  copiable y botón "Desactivar acceso público".
+- Tests: 27 tests en `test_desktop_product.py` (FakeTunnel, start/stop, host, origen, loopback,
+  binary missing, URL parsing); suite completa: 110+ tests.
+
 ## [0.15.0] - 2026-09-09
 
 ### Añadido — PHASE 14.2: Overhaul de `nova-setup` (dependencias reales + experiencia de terminal)
