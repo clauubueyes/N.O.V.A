@@ -354,6 +354,45 @@ class InstallWorker(QThread):
 # Installer Wizard
 # ---------------------------------------------------------------------------
 
+class SystemCheckWorker(QThread):
+    """Hilo para detectar hardware sin bloquear la UI de Qt."""
+    done = Signal(list, object, object, object)  # checks, profile, recommended, system_info
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            from nova.setup.detect import detect_machine
+            from nova.setup.desktop import recommended_chat
+            profile = detect_machine()
+            is_win = sys.platform == "win32"
+            win_ok = is_win
+            win_label = "Windows compatible" if is_win else profile.os_name
+            if is_win:
+                try:
+                    wv = sys.getwindowsversion()
+                    win_ok = wv.build >= 19045 and profile.arch.lower() in ("amd64", "x86_64")
+                    win_label = "Windows compatible" if win_ok else "Se necesita Windows 10 22H2+ 64 bits"
+                except Exception:
+                    win_ok = False
+            checks = [
+                (win_label, win_ok),
+                (f"{profile.ram_total_gb:.0f} GB de memoria", profile.ram_total_gb >= 4),
+                (f"{profile.disk_free_gb:.0f} GB de espacio disponible", profile.disk_free_gb >= 8),
+                (profile.gpu_model or "Procesador disponible", True),
+                ("Conexión a Internet", True),
+            ]
+            spec = recommended_chat(profile)
+            system_info = {
+                "cpu": profile.cpu_model,
+                "ram": f"{profile.ram_total_gb:.0f} GB",
+                "gpu": profile.gpu_model or "Integrada",
+                "arch": profile.arch,
+            }
+            self.done.emit(checks, profile, spec, system_info)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class Installer(QWidget):
     def __init__(self):
         super().__init__()
@@ -771,46 +810,17 @@ class Installer(QWidget):
         self._system_loading.setStyleSheet(f"color:{TEXT_SECONDARY};font-size:13px;padding:16px 0;")
         self._system_checks_lay.addWidget(self._system_loading)
 
-        def worker():
-            from nova.setup.detect import detect_machine
-            from nova.setup.desktop import recommended_chat
-            try:
-                profile = detect_machine()
-                is_win = sys.platform == "win32"
-                win_ok = is_win
-                win_label = "Windows compatible" if is_win else profile.os_name
-                if is_win:
-                    try:
-                        wv = sys.getwindowsversion()
-                        win_ok = wv.build >= 19045 and profile.arch.lower() in ("amd64", "x86_64")
-                        win_label = "Windows compatible" if win_ok else "Se necesita Windows 10 22H2+ 64 bits"
-                    except Exception:
-                        win_ok = False
-                checks = [
-                    (win_label, win_ok),
-                    (f"{profile.ram_total_gb:.0f} GB de memoria", profile.ram_total_gb >= 4),
-                    (f"{profile.disk_free_gb:.0f} GB de espacio disponible", profile.disk_free_gb >= 8),
-                    (profile.gpu_model or "Procesador disponible", True),
-                    ("Conexión a Internet", True),
-                ]
-                spec = recommended_chat(profile)
-                self._recommended = spec
-                self._profile = profile
-                self._system_info = {
-                    "cpu": profile.cpu_model,
-                    "ram": f"{profile.ram_total_gb:.0f} GB",
-                    "gpu": profile.gpu_model or "Integrada",
-                    "arch": profile.arch,
-                }
-                QTimer.singleShot(0, lambda: self._show_system_results(checks))
-            except Exception as exc:
-                QTimer.singleShot(0, lambda e=exc: self._show_system_error(str(e)))
+        self._sys_worker = SystemCheckWorker()
+        self._sys_worker.done.connect(self._show_system_results)
+        self._sys_worker.failed.connect(self._show_system_error)
+        self._sys_worker.start()
 
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _show_system_results(self, checks):
+    def _show_system_results(self, checks, profile=None, spec=None, system_info=None):
         self._checks_done = True
+        if spec is not None:
+            self._recommended = spec
+        if system_info is not None:
+            self._system_info = system_info
         self._clear_layout(self._system_checks_lay)
         for text, ok in checks:
             self._system_checks_lay.addWidget(_check_row("✓" if ok else "✗", text, ok))
