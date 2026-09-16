@@ -97,6 +97,10 @@
         <form class="composer" id="compose">
           <div class="attachments" id="attachments"></div>
           <textarea id="message" rows="1" maxlength="40000" placeholder="Escribe un mensaje…" aria-label="Mensaje para N.O.V.A."></textarea>
+          <div class="voice-wave" id="voice-wave" hidden aria-hidden="true">
+            <span class="voice-wave-hint">Grabando… para transcripción editable</span>
+            <div class="voice-wave-bars" id="voice-wave-bars"></div>
+          </div>
           <div class="composer-toolbar">
             <button type="button" class="icon" id="attach" aria-label="Adjuntar imágenes o archivos" title="Adjuntar imágenes o archivos">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -104,8 +108,14 @@
             <select id="model" aria-label="Modelo"><option value="">Selección automática</option></select>
             <select id="agent" aria-label="Modo de herramientas"><option value="">Chat</option><option value="general">Con herramientas</option></select>
             <span class="spacer"></span>
+            <button type="button" class="icon voice-cancel" id="voice-cancel" aria-label="Cancelar grabación" title="Cancelar grabación" hidden>
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
             <button type="button" class="icon" id="microphone" aria-label="Micrófono" title="Micrófono" hidden>
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+            </button>
+            <button type="button" class="icon" id="call-btn" aria-label="Llamada de voz" title="Llamada de voz con N.O.V.A." hidden>
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             </button>
             <button type="submit" class="send" id="send" aria-label="Enviar mensaje" title="Enviar (Intro)" disabled>
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
@@ -122,6 +132,25 @@
 <dialog id="confirmation"><h2 id="confirmation-title"></h2><p id="confirmation-text"></p><div class="actions"><button id="confirm-no">Cancelar</button><button id="confirm-yes" class="primary">Continuar</button></div></dialog>
 <dialog id="approval"><p class="eyebrow">TÚ TIENES EL CONTROL</p><h2>Esta acción necesita autorización</h2><p id="approval-description"></p><pre id="approval-args"></pre><p class="muted">Solicitud local. La IA propone; tú decides.</p><div class="actions"><button id="approval-cancel">Cancelar</button><button id="approval-always">Recordar esta acción</button><button class="primary" id="approval-once">Autorizar una vez</button></div></dialog>
 <div class="toast" id="toast" role="alert" hidden></div>
+<dialog id="call" class="call" aria-label="Llamada de voz con N.O.V.A." data-phase="off">
+  <button class="icon call-close" id="call-end" aria-label="Terminar llamada" title="Terminar llamada">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+  </button>
+  <div class="call-body">
+    <div class="call-orb" id="call-orb"><span>N</span></div>
+    <div class="call-wave" id="call-wave" aria-hidden="true"></div>
+    <p class="call-status" id="call-status" role="status">Llamada con N.O.V.A.</p>
+    <div class="call-transcript" id="call-transcript" aria-live="polite"></div>
+  </div>
+  <div class="call-footer">
+    <button class="call-mic" id="call-mic" aria-label="Interrumpir o responder" title="Interrumpir o responder">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+    </button>
+    <p class="call-hint" id="call-hint">Habla cuando quieras; N.O.V.A. responde con voz y te escucha con solo hablar.</p>
+  </div>
+</dialog>
+<script src="voice-core.js"></script>
+<script src="voice.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

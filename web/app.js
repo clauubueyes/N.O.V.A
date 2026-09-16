@@ -7,7 +7,6 @@ let token = params.get("token") || sessionStorage.getItem("nova.token") || "";
 if (params.get("token")) sessionStorage.setItem("nova.token", token);
 localStorage.removeItem("nova.token");
 let current = null, busy = false, pending = [], status = null, panelView = "", prepareTimer = null, approvalId = null, stick = true;
-let voice = null, micStream = null, mediaRecorder = null, recChunks = [], recActive = false;
 const messagesEl = $("messages");
 function syncSend() {
   const has = $("message").value.trim() !== "" || pending.length > 0;
@@ -104,11 +103,8 @@ function renderMessage(role, content, cards = [], images = []) {
   for (const card of cards) { const chip = el("div", undefined, "message-attachment"); chip.append(el("span", card.name)); wrap.append(chip); }
   if (role === "assistant") {
     const speak = el("button", "Leer", "speak"); speak.type = "button"; speak._voiceKey = content;
-    speak.onclick = () => Promise.resolve().then(() => {
-      if (audioQueue.isSpeaking(content)) { audioQueue.stop(); return; }
-      return speakMessage(content);
-    }).catch(fail);
-    speak.hidden = !voiceCanSpeak();
+    speak.onclick = () => Promise.resolve().then(() => NovaVoice.toggleSpeak(content)).catch(fail);
+    speak.hidden = !NovaVoice.canSpeak();
     wrap.append(speak, button("Copiar", () => navigator.clipboard.writeText(content).then(() => toast("Respuesta copiada.")), "copy"));
   }
   outer.append(wrap); $("messages").append(outer); return outer;
@@ -136,145 +132,10 @@ function renderSources(steps, messageNode) {
   }
   messageNode.querySelector(".message-wrap").append(block);
 }
-const audioQueue = (() => {
-  const audio = new Audio();
-  let queue = [], current = null, playing = false;
-  function refresh() {
-    for (const btn of document.querySelectorAll(".speak")) {
-      btn.setAttribute("data-voice", playing && current && btn._voiceKey === current.key ? "playing" : "");
-    }
-  }
-  function cleanup(url) { if (url && url.startsWith("blob:")) URL.revokeObjectURL(url); }
-  function next() {
-    if (!queue.length) { playing = false; current = null; refresh(); return; }
-    current = queue.shift(); playing = true; refresh();
-    audio.src = current.url;
-    audio.play().catch(() => { cleanup(current.url); current = null; next(); });
-  }
-  audio.onended = () => { cleanup(current && current.url); next(); };
-  audio.onerror = () => { cleanup(current && current.url); next(); };
-  return {
-    play(key, url) { queue.push({key, url}); if (!playing) next(); },
-    stop() { queue = []; cleanup(current && current.url); current = null; playing = false; audio.pause(); audio.removeAttribute("src"); refresh(); },
-    isSpeaking(key) { return playing && current !== null && current.key === key; }
-  };
-})();
-function voiceCanSpeak() { return !!(voice && voice.enabled && voice.tts && voice.tts.available); }
-async function speakMessage(text) {
-  const response = await rawFetch("/v1/voice/speak", {
-    method: "POST",
-    headers: {...headers(), "Content-Type": "application/json"},
-    body: JSON.stringify({text})
-  });
-  const blob = await response.blob();
-  audioQueue.play(text, URL.createObjectURL(blob));
-}
-function encodeWav(samples, sampleRate) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
-  const str = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-  str(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE");
-  str(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-  str(36, "data"); view.setUint32(40, samples.length * 2, true);
-  let off = 44;
-  for (let i = 0; i < samples.length; i++, off += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([buffer], {type: "audio/wav"});
-}
-function downsampleTo16k(samples, fromRate) {
-  if (fromRate === 16000) return samples;
-  const ratio = fromRate / 16000;
-  const out = new Float32Array(Math.floor(samples.length / ratio));
-  for (let i = 0; i < out.length; i++) {
-    const src = i * ratio, i0 = Math.floor(src), frac = src - i0;
-    out[i] = samples[i0] + (samples[Math.min(i0 + 1, samples.length - 1)] - samples[i0]) * frac;
-  }
-  return out;
-}
-async function transcribeBlob(blob) {
-  const Ctx = window.AudioContext || window.webkitAudioContext;
-  const ctx = new Ctx();
-  try {
-    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-    let mono = buffer.numberOfChannels === 1 ? buffer.getChannelData(0) : null;
-    if (!mono) {
-      const frames = buffer.length, out = new Float32Array(frames);
-      for (let c = 0; c < buffer.numberOfChannels; c++) {
-        const ch = buffer.getChannelData(c);
-        for (let i = 0; i < frames; i++) out[i] += ch[i];
-      }
-      for (let i = 0; i < frames; i++) out[i] /= buffer.numberOfChannels;
-      mono = out;
-    }
-    if (mono.length < 3200) return "";
-    const pcm = downsampleTo16k(mono, buffer.sampleRate);
-    const response = await rawFetch("/v1/voice/transcribe", {
-      method: "POST",
-      headers: {...headers(), "Content-Type": "audio/wav"},
-      body: encodeWav(pcm, 16000)
-    });
-    const data = await response.json();
-    return (data.text || "").trim();
-  } finally {
-    ctx.close();
-  }
-}
-function micVisual(active) {
-  const mic = $("microphone");
-  mic.classList.toggle("recording", active);
-  mic.setAttribute("aria-label", active ? "Detener la grabación y transcribir" : "Hablar con N.O.V.A.");
-  mic.setAttribute("title", active ? "Detener la grabación y transcribir" : "Hablar con N.O.V.A.");
-}
-function stopRecording() {
-  if (!recActive) return;
-  recActive = false;
-  if (mediaRecorder) mediaRecorder.stop();
-  micVisual(false);
-}
-async function toggleMic() {
-  if (recActive) { stopRecording(); return; }
-  if (busy) return;
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({audio: true});
-  } catch (e) {
-    fail(new Error((e && (e.name === "NotAllowedError" || e.name === "PermissionDeniedError")) ? "Permiso de micrófono denegado. Concede acceso al micrófono para poder dictar." : "No se ha podido acceder al micrófono."));
-    return;
-  }
-  mediaRecorder = new MediaRecorder(micStream);
-  recChunks = [];
-  mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
-  mediaRecorder.onstop = async () => {
-    micStream.getTracks().forEach(t => t.stop());
-    micStream = null;
-    const blob = new Blob(recChunks, {type: mediaRecorder.mimeType || "audio/webm"});
-    try {
-      const text = await transcribeBlob(blob);
-      if (text) {
-        $("message").value = text; syncSend();
-        if (!$("message").value.trim() || busy) return;
-        $("compose").requestSubmit();
-      } else {
-        toast("No he escuchado palabras claras. Prueba de nuevo.");
-      }
-    } catch (e) { fail(e); }
-  };
-  mediaRecorder.start();
-  recActive = true;
-  micVisual(true);
-}
 async function refreshVoice() {
-  try { voice = await api("GET", "/v1/voice/status"); }
-  catch (e) { voice = null; return; }
-  const mic = $("microphone");
-  const sttOk = !!(voice.enabled && voice.stt && voice.stt.available);
-  mic.hidden = !sttOk;
-  mic.disabled = busy;
-  mic.setAttribute("title", sttOk ? "Hablar con N.O.V.A." : (voice.enabled ? (voice.stt.reason || "Voz no disponible") : "La voz está desactivada en la configuración"));
-  for (const btn of document.querySelectorAll(".speak")) btn.hidden = !voiceCanSpeak();
+  try { NovaVoice.setStatus(await api("GET", "/v1/voice/status")); }
+  catch (e) { NovaVoice.setStatus(null); }
+  NovaVoice.updateVisibility();
 }
 async function openConversation(row) {
   if (busy) return;
@@ -310,6 +171,7 @@ const SLASH_COMMANDS = [
   ["route", "Averigua qué modelo usaría para un texto"],
   ["audit", "Actividad reciente de herramientas"],
   ["model", "Fija el modelo de la conversación"],
+  ["call", "Llamada de voz con N.O.V.A."],
 ];
 let slashIndex = -1;
 function slashSuggest() {
@@ -381,6 +243,9 @@ async function runSlash(raw) {
           $("model").value = args; reply = "Modelo fijado: " + args;
         }
         break;
+      case "call":
+        if (!NovaVoice.callAvailable()) { reply = "La llamada de voz no está disponible: activa la voz y asegúrate de tener STT y TTS (ver /status)."; break; }
+        userNode.remove(); NovaVoice.startCall().catch(fail); return;
       default:
         reply = "Comando desconocido: /" + cmd + ". Escribe /help para ver los disponibles.";
     }
@@ -396,7 +261,8 @@ async function send(event) {
   event.preventDefault(); if (busy) return;
   const message = $("message").value.trim(); if (!message && !pending.length) return;
   if (message.startsWith("/")) { await runSlash(message); return; }
-  busy = true; $("send").disabled = true; $("agent").disabled = true; $("attach").disabled = true; $("microphone").disabled = true;
+  NovaVoice.beforeSend();
+  busy = true; $("send").disabled = true; $("agent").disabled = true; $("attach").disabled = true; $("microphone").disabled = true; $("call-btn").disabled = true;
   let thinking, userNode;
   try {
     if (!current) { const created = await api("POST", "/v1/sessions", {agent: $("agent").value || null}); current = created.session_id; }
@@ -411,7 +277,7 @@ async function send(event) {
     $("conversation-title").textContent = message.slice(0,70) || "Conversación con archivos";
     await refreshConversations(); scrollChat();
   } catch (error) { thinking?.remove(); userNode?.remove(); fail(error); }
-  finally { stopRecording(); busy = false; syncSend(); $("agent").disabled = false; $("attach").disabled = false; $("microphone").disabled = false; $("message").focus(); }
+  finally { busy = false; syncSend(); NovaVoice.updateVisibility(); $("agent").disabled = false; $("attach").disabled = false; $("message").focus(); }
 }
 function renderAttachments() {
   $("attachments").replaceChildren();
@@ -551,8 +417,6 @@ async function checkApprovals(){try{if(!status?.desktop)return;const data=await 
 async function resolveApproval(decision){if(!approvalId)return;await api("POST","/v1/desktop/permissions/"+approvalId,{decision});$("approval").close();approvalId=null;}
 window.novaNavigate=async view=>{const routes={new:newConversation,settings:showSettings,library:showLibrary,memory:showMemory,tools:showTools,status:showStatus};try{await(routes[view]||newConversation)();}catch(e){fail(e);}};
 $("compose").onsubmit = send;
-$("microphone").onclick = () => toggleMic().catch(fail);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && recActive) stopRecording(); });
 $("new").onclick = newConversation;
 $("agent").onchange = newConversation;
 $("menu").onclick = () => { const open = $("sidebar").classList.toggle("visible"); $("scrim").hidden = !open; };
