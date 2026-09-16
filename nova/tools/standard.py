@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from nova.tools.base import BaseTool, ToolArgumentError, ToolError, ToolResult
+from nova.tools.host.paths import PathBounds
 
 _BIN_OPS = {
     ast.Add: operator.add,
@@ -100,8 +101,17 @@ class ListDirTool(BaseTool):
     description = "List the entries of a directory (name, kind, size). Read-only."
     input_schema = ListDirArgs
 
+    def __init__(self, bounds: "object | None" = None) -> None:
+        # Optional PathBounds (host.roots). When configured, listing is confined
+        # to the allowed roots; otherwise it stays a plain directory listing that
+        # still requires permission approval unless explicitly allowed.
+        self._bounds = bounds
+
     def execute(self, params: ListDirArgs) -> ToolResult:
-        directory = Path(params.path).expanduser()
+        if self._bounds is not None and self._bounds.enabled:
+            directory = self._bounds.resolve_within(params.path, "path")
+        else:
+            directory = Path(params.path).expanduser()
         if not directory.exists():
             raise ToolError(f"path does not exist: {directory}")
         if not directory.is_dir():
@@ -126,6 +136,11 @@ class ListDirTool(BaseTool):
             message=f"{len(entries)} entries",
             data={"path": str(directory), "entries": entries},
         )
+
+
+def bounded_list_dir(bounds: PathBounds) -> ListDirTool:
+    """A directory listing confined to the configured host.roots."""
+    return ListDirTool(bounds)
 
 
 def all_standard_tools() -> list[BaseTool]:

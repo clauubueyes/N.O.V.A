@@ -2,11 +2,35 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Iterator, Sequence
+
+import threading
 
 
 class NOVAProviderError(Exception):
     """Raised when an LLM provider request fails or returns an invalid shape."""
+
+
+@dataclass
+class StreamCancellation:
+    """Shared flag a streaming loop checks between chunks.
+
+    Callers create it, hand it to ``stream()``, and call ``cancel()`` from any
+    thread (e.g. a `POST /v1/sessions/{id}/stop` endpoint) to stop generation.
+    """
+
+    _stopped: threading.Event = field(default_factory=threading.Event)
+
+    def cancel(self) -> None:
+        self._stopped.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._stopped.is_set()
+
+    @classmethod
+    def fresh(cls) -> "StreamCancellation":
+        return cls()
 
 
 @dataclass
@@ -70,6 +94,21 @@ class LLMProvider(ABC):
         Raises `NOVAProviderError` when the provider does not support embeddings.
         """
         raise NOVAProviderError(f"{type(self).__name__} does not support embeddings")
+
+    def stream(
+        self,
+        request: ChatCompletionRequest,
+        cancellation: StreamCancellation | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Stream content deltas. Yields ``{"content": str}`` frames and finally
+        ``{"usage": {...}}`` when the provider reports it. Falls back to a single
+        chunk for providers without a streaming endpoint."""
+        response = self.chat(request)
+        if cancellation is not None and cancellation.cancelled:
+            return
+        yield {"content": response.message.content}
+        if response.usage:
+            yield {"usage": response.usage}
 
     def close(self) -> None:
         """Release provider resources. May be overridden."""

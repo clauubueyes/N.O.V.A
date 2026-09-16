@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Callable, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 import httpx
 
@@ -14,6 +14,7 @@ from nova.llm.base import (
     LLMProvider,
     ModelInfo,
     NOVAProviderError,
+    StreamCancellation,
 )
 
 logger = get_logger("llm.ollama")
@@ -205,3 +206,93 @@ class OllamaProvider(LLMProvider):
             return 'vision' in response.json().get('capabilities', [])
         except (httpx.HTTPError, ValueError):
             return False
+
+    def stream(
+        self,
+        request: ChatCompletionRequest,
+        cancellation: StreamCancellation | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Stream content deltas from Ollama's OpenAI-compatible SSE endpoint.
+
+        Yields ``{"content": str}`` frames (empty ``{"content": ""}`` deltas are
+        skipped) and a final ``{"usage": {...}}`` frame when provided. Stops
+        early once ``cancellation.cancelled`` is set.
+        """
+        payload = {
+            "model": request.model or self._settings.default_model,
+            "messages": [message.to_dict() for message in request.messages],
+            "temperature": (
+                request.temperature
+                if request.temperature is not None
+                else self._settings.temperature
+            ),
+            "stream": True,
+        }
+        if request.max_tokens:
+            payload["max_tokens"] = request.max_tokens
+        try:
+            with self._client.stream("POST", _CHAT_URL, json=payload) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if cancellation is not None and cancellation.cancelled:
+                        break
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:]
+                    if line.strip() == "[DONE]":
+                        break
+                    try:
+                        frame = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    choice = (frame.get("choices") or [{}])[0]
+                    delta = (choice.get("delta") or {}).get("content")
+                    if delta:
+                        yield {"content": delta}
+                    if frame.get("usage"):
+                        yield {"usage": frame["usage"]}
+        except httpx.HTTPStatusError as exc:
+            raise NOVAProviderError(
+                f"Ollama returned HTTP {exc.response.status_code}: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise NOVAProviderError(
+                f"Could not reach Ollama at {self._settings.base_url}: {exc}"
+            ) from exc
+
+    def show_info(self, model: str) -> dict:
+        """Return the `/api/show` metadata for a model (best-effort).
+
+        Gives the ModelRegistry the declared capabilities (``vision``/``tools``),
+        the context window and the parameter family so it can make routing
+        decisions without hardcoded name lists.
+        """
+        try:
+            response = self._client.post('/api/show', json={'model': model})
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return {}
+        data = response.json()
+        details = data.get("details", {})
+        model_info = data.get("model_info", {})
+        context_length = None
+        for key in (
+            "llama.context_length",
+            "qwen2.context_length",
+            "gemma2.context_length",
+            "phi3.context_length",
+            "mistral.context_length",
+        ):
+            if key in model_info:
+                context_length = model_info[key]
+                break
+        params = data.get("parameters", "")
+        return {
+            "capabilities": list(data.get("capabilities", []) or []),
+            "context_length": context_length,
+            "family": details.get("family") or "",
+            "parameter_size": details.get("parameter_size") or "",
+            "quantization": details.get("quantization_level") or "",
+            "parameters": params,
+        }

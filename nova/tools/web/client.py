@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 import threading
 import time
@@ -298,8 +299,57 @@ class RateLimiter:
             self._last[host] = time.monotonic()
 
 
+_INTERNAL_HOSTNAME_SUFFIXES = (
+    ".local",
+    ".internal",
+    ".localdomain",
+    ".home.arpa",
+    ".lan",
+    ".test",
+    ".localhost",
+    ".dns",
+)
+_LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "metadata", "metadata.google.internal"}
+
+
+def _blocked_host_reason(hostname: str) -> str | None:
+    """Return a reason when `hostname` is an internal/local address, else None.
+
+    Protects the local machine and private LAN from SSRF via `web_fetch`: a
+    prompt-injected page (or a careless search result) must never be able to make
+    N.O.V.A. reach 127.0.0.1, link-local metadata or private ranges. Literal IPs
+    are checked with `ipaddress`; hostnames that obviously resolve to the local
+    network are blocked by well-known suffix. DNS resolution is intentionally NOT
+    performed here to keep validation offline and side-effect free.
+    """
+    lowered = hostname.lower().rstrip(".").strip()
+    if lowered in _LOOPBACK_NAMES:
+        return "address is loopback/internal"
+    if lowered.endswith(_INTERNAL_HOSTNAME_SUFFIXES):
+        return "hostname looks internal"
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
+    try:
+        address = ipaddress.ip_address(lowered)
+    except ValueError:
+        try:
+            address = ipaddress.ip_address(lowered.strip("[]"))
+        except ValueError:
+            return None
+    if (
+        address.is_loopback
+        or address.is_private
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    ):
+        return f"address is in a non-public range ({address})"
+    return None
+
+
 def validate_web_url(url: str) -> str:
-    """Only http(s) URLs with a host; reject credentials and other schemes."""
+    """Only http(s) URLs with a public host; reject credentials, other schemes
+    and internal/private addresses (SSRF guard)."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ToolError(
@@ -309,6 +359,9 @@ def validate_web_url(url: str) -> str:
         raise ToolError("URL has no host.")
     if parsed.username or parsed.password:
         raise ToolError("URLs with userinfo (user:pass@) are not allowed.")
+    blocked = _blocked_host_reason(parsed.hostname)
+    if blocked:
+        raise ToolError(f"URL host not allowed: {blocked}.")
     return url
 
 

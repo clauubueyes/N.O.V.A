@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    stream: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -49,6 +50,7 @@ class SessionChatRequest(BaseModel):
     message: str = Field(max_length=40000)
     model: str | None = None
     attachments: list[str] = Field(default_factory=list, max_length=4)
+    stream: bool = False
 
 
 class SessionChatResponse(BaseModel):

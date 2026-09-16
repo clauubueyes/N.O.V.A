@@ -11,6 +11,61 @@ from nova.tools.registry import ToolRegistry
 
 logger = get_logger("tools.runner")
 
+_MAX_VALUE_CHARS = 300
+_MASKED_VALUE = "<redacted>"
+# Tools whose arguments may carry private content (file bodies, memory notes,
+# credentials). The audit log records their keys but never their values.
+_CONTENT_TOOLS = frozenset(
+    {"write_file", "delete_file", "read_file", "remember", "system_config", "install_software"}
+)
+
+
+def _scrub_args(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    """Redact sensitive/large values before they reach the audit log."""
+    if not args:
+        return {}
+    mask_values = tool_name in _CONTENT_TOOLS
+    scrubbed: dict[str, Any] = {}
+    for key, value in args.items():
+        if mask_values:
+            scrubbed[key] = _MASKED_VALUE
+        elif isinstance(value, str):
+            scrubbed[key] = value[:_MAX_VALUE_CHARS]
+            if len(value) > _MAX_VALUE_CHARS:
+                scrubbed[key] += f"... ({len(value)} chars)"
+        elif isinstance(value, (list, tuple, set)):
+            entries = []
+            total = 0
+            for item in list(value)[:8]:
+                text = str(item)
+                entries.append(text[:_MAX_VALUE_CHARS])
+                total += len(str(item))
+            scrubbed[key] = entries
+            if len(value) > 8 or total > _MAX_VALUE_CHARS:
+                scrubbed[key].append(f"... ({len(value)} items)")
+        else:
+            scrubbed[key] = value
+    return scrubbed
+
+
+def _scrub_data(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Truncate verbose tool output (file contents, command stdout) for the audit."""
+    if not data:
+        return data
+    scrubbed: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            scrubbed[key] = value[:_MAX_VALUE_CHARS]
+            if len(value) > _MAX_VALUE_CHARS:
+                scrubbed[key] += f"... ({len(value)} chars)"
+        elif isinstance(value, list):
+            scrubbed[key] = value[:8]
+            if len(value) > 8:
+                scrubbed[key] = scrubbed[key] + [f"... ({len(value)} items)"]
+        else:
+            scrubbed[key] = value
+    return scrubbed
+
 
 class ToolRunner:
     """Executes a tool through permission check -> validation -> execution, auditing every step."""
@@ -118,10 +173,10 @@ class ToolRunner:
             self._audit.record(
                 tool=tool_name,
                 decision=decision,
-                args=args or {},
+                args=_scrub_args(tool_name, args or {}),
                 ok=ok,
                 message=message,
-                data=data,
+                data=_scrub_data(data),
                 duration_ms=duration_ms,
             )
         except Exception as exc:  # audit must never break execution
