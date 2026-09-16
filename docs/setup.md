@@ -224,6 +224,14 @@ model_router:
 `nova setup` te deja elegir Local/Hybrid/Configure later; `nova doctor` muestra el modo, la política
 de privacidad y el estado de OpenCode.
 
+### Proveedores cloud y compatibles
+
+OpenAI y Gemini usan claves proporcionadas por el usuario; una suscripción de ChatGPT no equivale a
+acceso API. Se recomienda `OPENAI_API_KEY`/`GEMINI_API_KEY`. Desde la aplicación Desktop las claves se
+guardan con el almacén de credenciales del sistema operativo. Nunca se muestran de vuelta al frontend.
+También se pueden configurar OpenCode y múltiples endpoints OpenAI-compatible con nombre, URL, modelo
+y ubicación. Todos permanecen desactivados por defecto y el perfil `local` funciona completamente offline.
+
 ## Ejecución
 
 CLI interactivo (si Ollama está instalado pero apagado, se arranca solo):

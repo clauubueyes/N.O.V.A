@@ -5,10 +5,11 @@ import secrets
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,13 +35,13 @@ from nova.api.schemas import (
 )
 from nova.api.voice import build_voice_router
 from nova.automation import AutomationExecutor, Scheduler
+from nova.core.approvals import ApprovalBroker
+from nova.core.attachments import AttachmentStore
 from nova.core.audit import AuditLog
-from nova.core.config import AIMode, NovaSettings, PrivacyPolicy, load_settings
+from nova.core.config import NovaSettings, load_settings
+from nova.core.conversations import ConversationStore
 from nova.core.logging import get_logger
 from nova.core.session import ChatSession
-from nova.core.conversations import ConversationStore
-from nova.core.attachments import AttachmentStore
-from nova.core.approvals import ApprovalBroker
 from nova.llm.base import (
     ChatCompletionRequest,
     ChatMessage,
@@ -48,8 +49,14 @@ from nova.llm.base import (
     NOVAProviderError,
     StreamCancellation,
 )
-from nova.llm.opencode import OpenCodeProvider
-from nova.llm.registry import create_provider
+from nova.llm.model_registry import (
+    ModelCapabilities,
+    ModelLocation,
+    ModelRegistry,
+    RegisteredModel,
+)
+from nova.llm.orchestrator import CloudConfirmationRequired, InferenceOrchestrator
+from nova.llm.registry import create_provider, create_providers
 from nova.llm.resources import ResourceManager
 from nova.llm.router import ModelRouter, build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
@@ -86,12 +93,11 @@ class SessionEntry:
     agent: Agent | None = None
     lock: Any = field(default_factory=threading.RLock)
     local_only: bool = False
-    rag: "RagService | None" = None
+    rag: RagService | None = None
     stream_stop: Any = field(default_factory=threading.Event)
     stream_cancellation: StreamCancellation | None = None
 
     def close(self) -> None:
-        self.memory.close()
         self.memory.close()
 
 
@@ -108,6 +114,8 @@ class AppState:
     executor: AutomationExecutor | None = None
     automation_memory: MemoryService | None = None
     cloud_provider: LLMProvider | None = None
+    providers: dict[str, LLMProvider] = field(default_factory=dict)
+    inference: InferenceOrchestrator | None = None
     conversations: ConversationStore | None = None
     attachments: AttachmentStore | None = None
     approvals: ApprovalBroker | None = None
@@ -180,22 +188,22 @@ def create_app(
 
     provider = provider or create_provider(settings.llm)
 
-    # PHASE 14 — create cloud provider when hybrid mode is configured
-    cloud_provider: LLMProvider | None = None
-    if settings.ai.mode == AIMode.hybrid and settings.open_code.enabled:
-        op = OpenCodeProvider(settings=settings.open_code)
-        if op.health():
-            cloud_provider = op
-        else:
-            op.close()
-            logger.info("api: opencode not reachable; local-only fallback")
+    providers = create_providers(settings, local_provider=provider)
+    cloud_provider = next(
+        (item for item in providers.values() if item.location == "cloud"), None
+    )
+    audit = AuditLog(settings.audit.file)
 
     state = AppState(
         settings=settings,
         provider=provider,
         cloud_provider=cloud_provider,
-        audit=AuditLog(settings.audit.file),
+        audit=audit,
         permissions=PermissionSystem(settings.permissions),
+        providers=providers,
+    )
+    state.inference = InferenceOrchestrator(
+        providers, local_provider=settings.llm.provider, audit=audit
     )
     state.default_model = settings.llm.default_model
     state.models_ttl_s = models_cache_ttl_s
@@ -205,6 +213,38 @@ def create_app(
         state.approvals = ApprovalBroker()
         from nova.desktop.tunnel import TunnelManager
         state.tunnel = TunnelManager()
+    model_registry = ModelRegistry()
+    for model_id in settings.llm.models.values():
+        if model_id:
+            model_registry.register(RegisteredModel(
+                settings.llm.provider, model_id, model_id, ModelLocation.local,
+                ModelCapabilities.from_name(model_id),
+            ))
+    configured_cloud = (
+        ("openai", settings.openai),
+        ("gemini", settings.gemini),
+        ("opencode", settings.open_code),
+    )
+    for provider_name, configured in configured_cloud:
+        if configured.enabled:
+            model_ids = set(configured.models.values())
+            if configured.default_model:
+                model_ids.add(configured.default_model)
+            for model_id in model_ids:
+                model_registry.register(RegisteredModel(
+                    provider_name, model_id, model_id, ModelLocation.cloud,
+                    ModelCapabilities.from_name(model_id),
+                ))
+    for configured in settings.openai_compatible:
+        if configured.enabled:
+            model_ids = set(configured.models.values())
+            if configured.default_model:
+                model_ids.add(configured.default_model)
+            for model_id in model_ids:
+                model_registry.register(RegisteredModel(
+                    configured.name, model_id, model_id, ModelLocation(configured.location),
+                    ModelCapabilities.from_name(model_id),
+                ))
     state.router: ModelRouter = build_router(
         settings.llm,
         settings.model_router,
@@ -212,6 +252,10 @@ def create_app(
         ai_mode=settings.ai.mode,
         ai_privacy=settings.ai.privacy,
         open_code=settings.open_code,
+        openai=settings.openai,
+        gemini=settings.gemini,
+        compatible=settings.openai_compatible,
+        model_registry=model_registry,
     )
 
     automation_workflows = {wf.name: wf for wf in settings.automation.workflows}
@@ -284,9 +328,8 @@ def create_app(
             state.automation_memory.close()
         if state.tunnel is not None:
             state.tunnel.stop()
-        provider.close()
-        if state.cloud_provider is not None:
-            state.cloud_provider.close()
+        for managed in {id(item): item for item in state.providers.values()}.values():
+            managed.close()
         for entry in state.sessions.values():
             entry.close()
         for entry in state.agents.values():
@@ -437,6 +480,10 @@ def create_app(
             "status": "ok" if provider.health() else "degraded",
             "provider": provider.health(),
             "cloud_provider": cloud_provider.health() if cloud_provider is not None else None,
+            "providers": {
+                name: {"healthy": item.health(), "location": item.location}
+                for name, item in state.providers.items()
+            },
             "ai_mode": settings.ai.mode,
             "privacy": settings.ai.privacy,
             "version": __version__,
@@ -469,6 +516,48 @@ def create_app(
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             state.models_cache = {"ts": time.monotonic(), "models": cached}
         return cached
+
+    @app.get("/v1/ai/providers")
+    def ai_providers() -> dict[str, Any]:
+        return {
+            "policy": settings.model_router.policy,
+            "never_send_data_to_cloud": settings.model_router.never_send_data_to_cloud,
+            "allow_cloud_fallback": settings.model_router.allow_cloud_fallback,
+            "require_cloud_confirmation": settings.model_router.require_cloud_confirmation,
+            "providers": [
+                {
+                    "name": name,
+                    "location": item.location,
+                    "healthy": item.health(),
+                    "capabilities": item.capabilities().__dict__,
+                }
+                for name, item in state.providers.items()
+            ],
+        }
+
+    @app.get("/v1/ai/models")
+    def ai_models() -> list[dict[str, Any]]:
+        return [
+            {
+                "provider": row.provider,
+                "model": row.model_id,
+                "display_name": row.display_name,
+                "location": row.location,
+                "context_window": row.capabilities.context_length,
+                "reasoning": row.capabilities.reasoning,
+                "tool_calling": row.capabilities.tool_calling,
+                "vision": row.capabilities.vision,
+                "streaming": row.capabilities.streaming,
+                "latency": row.latency,
+                "resource_class": row.resource_class,
+                "available": row.available,
+                "cost": {
+                    "input_per_million": row.cost_input_per_million,
+                    "output_per_million": row.cost_output_per_million,
+                },
+            }
+            for row in state.router.model_registry.all_models()
+        ]
 
     @app.get("/v1/tools", response_model=list[ToolInfoOut])
     def list_tools() -> list[ToolInfoOut]:
@@ -525,7 +614,7 @@ def create_app(
     @app.post("/v1/route")
     def route(req: ChatRequest) -> dict[str, str]:
         text = req.messages[-1].content if req.messages else ""
-        decision = state.router.route_for(text)
+        decision = state.router.route_for(text, task=req.task, latency=req.latency)
         return {
             "task_kind": decision.task_kind,
             "provider": decision.provider,
@@ -567,7 +656,9 @@ def create_app(
     @app.post("/v1/chat", response_model=ChatResponse)
     def chat(req: ChatRequest) -> ChatResponse | StreamingResponse:
         text = req.messages[-1].content if req.messages else ""
-        decision = state.router.route_for(text)
+        decision = state.router.route_for(text, task=req.task, latency=req.latency)
+        if decision.location == "cloud" and decision.confirmation_required and not req.cloud_confirmed:
+            raise HTTPException(status_code=409, detail="cloud confirmation required")
         messages = [ChatMessage(role=m.role, content=m.content) for m in req.messages]
 
         def build_request(model_override: str = "") -> ChatCompletionRequest:
@@ -584,43 +675,26 @@ def create_app(
         if req.stream:
             def stream_gen():
                 cancellation = StreamCancellation.fresh()
-                active = (
-                    state.cloud_provider
-                    if decision.provider == "opencode" and state.cloud_provider
-                    else provider
-                )
                 model = req.model or decision.model
                 emitted = list[str]()
+                actual_provider = decision.provider
                 try:
-                    for frame in active.stream(build_request(), cancellation=cancellation):
+                    for frame in state.inference.stream(
+                        build_request(), decision, cancellation=cancellation,
+                        cloud_confirmed=req.cloud_confirmed,
+                    ):
                         if "content" in frame:
                             emitted.append(frame["content"])
                             yield sse({"delta": frame["content"], "done": False})
                         elif "usage" in frame:
                             yield sse({"usage": frame["usage"], "done": False})
-                    yield sse({"done": True, "model": model, "content": "".join(emitted)})
+                        elif "provider" in frame:
+                            actual_provider = frame["provider"]
+                    yield sse({"done": True, "model": model, "content": "".join(emitted),
+                               "provider": actual_provider,
+                               "location": state.providers[actual_provider].location})
                 except NOVAProviderError as exc:
-                    # Only redirect to the local provider when nothing has been
-                    # flushed yet; a fallback after deltas would duplicate content
-                    # on the wire. Otherwise surface the error frame.
-                    if active is state.cloud_provider and provider.health() and not emitted:
-                        emitted.clear()
-                        try:
-                            for frame in provider.stream(
-                                build_request(settings.llm.default_model),
-                                cancellation=cancellation,
-                            ):
-                                if "content" in frame:
-                                    emitted.append(frame["content"])
-                                    yield sse({"delta": frame["content"], "done": False})
-                                elif "usage" in frame:
-                                    yield sse({"usage": frame["usage"], "done": False})
-                            yield sse({"done": True, "model": settings.llm.default_model,
-                                       "content": "".join(emitted)})
-                        except NOVAProviderError as local_exc:
-                            yield sse({"error": str(local_exc), "done": True})
-                    else:
-                        yield sse({"error": str(exc), "done": True})
+                    yield sse({"error": str(exc), "done": True})
 
             return StreamingResponse(
                 stream_gen(),
@@ -629,24 +703,22 @@ def create_app(
             )
 
         try:
-            active = state.cloud_provider if decision.provider == "opencode" and state.cloud_provider else provider
-            response = active.chat(build_request())
+            response = state.inference.chat(
+                build_request(), decision, cloud_confirmed=req.cloud_confirmed
+            )
+        except CloudConfirmationRequired as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except NOVAProviderError as exc:
-            # Cloud failed -> fallback to local
-            if decision.provider == "opencode" and state.cloud_provider and provider.health():
-                try:
-                    response = provider.chat(
-                        build_request(settings.llm.default_model)
-                    )
-                except NOVAProviderError as local_exc:
-                    raise HTTPException(status_code=502, detail=str(exc)) from exc
-            else:
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         return ChatResponse(
             id=uuid.uuid4().hex,
             model=response.model,
             message=response.message.to_dict(),
             usage=response.usage,
+            provider=response.provider or decision.provider,
+            location=(state.providers.get(response.provider).location
+                      if response.provider in state.providers else decision.location),
+            routing_reason=decision.reason,
         )
 
     @app.get("/v1/sessions")
@@ -760,7 +832,9 @@ def create_app(
             model = explicit_model
             decision = None
         else:
-            decision = state.router.route_for(req.message)
+            decision = state.router.route_for(
+                req.message, task=req.task, latency=req.latency
+            )
             model = decision.model
         active: object = provider
         context = ''
@@ -777,22 +851,30 @@ def create_app(
                 + [request.messages[-1]],
                 model=request.model,
             )
-        if not (req.attachments or entry.local_only) and decision is not None and decision.provider == "opencode" and state.cloud_provider:
-            active = state.cloud_provider
-        elif decision is not None and decision.provider == 'opencode':
-            request.model = settings.llm.default_model
+        if not (req.attachments or entry.local_only) and decision is not None:
+            selected = state.providers.get(decision.provider)
+            if selected is not None:
+                active = selected
+                request, _ = state.inference.prepare(request, decision)
+            elif decision.location == "cloud":
+                request.model = settings.llm.default_model
         return request, context, active, decision
 
     def session_stream(session_id: str, req: SessionChatRequest, entry: SessionEntry,
                        previous: list, cancellation: StreamCancellation) -> Iterator[str]:
         """Stream a full session turn as SSE frames; records state only on completion."""
-        sse = lambda frame: f"data: {json.dumps(frame, ensure_ascii=False)}\n\n"  # noqa: E731
+        sse = lambda frame: f"data: {json.dumps(frame, ensure_ascii=False)}\n\n"
         prepared = prepare_turn(session_id, req, entry)
         prompt, images, cards = prepared["prompt"], prepared["images"], prepared["cards"]
         try:
             request, context, active, decision = _session_request(req, entry, prompt, images, prepared["explicit_model"])
+            if decision is not None and decision.location == "cloud" and decision.confirmation_required and not req.cloud_confirmed:
+                entry.session.restore(previous)
+                yield sse({"error": "cloud confirmation required", "done": True})
+                return
             answer_parts: list[str] = []
             usage = None
+            actual_provider = decision.provider if decision else settings.llm.provider
             try:
                 for frame in active.stream(request, cancellation=cancellation):
                     if "content" in frame:
@@ -801,10 +883,11 @@ def create_app(
                     elif "usage" in frame:
                         usage = frame["usage"]
             except NOVAProviderError as exc:
-                if active is state.cloud_provider and provider.health() and not answer_parts:
+                if active is not provider and provider.health() and not answer_parts:
                     answer_parts = []
                     request.model = settings.llm.default_model
                     for frame in provider.stream(request, cancellation=cancellation):
+                        actual_provider = settings.llm.provider
                         if "content" in frame:
                             answer_parts.append(frame["content"])
                             yield sse({"delta": frame["content"], "done": False})
@@ -827,7 +910,10 @@ def create_app(
             state.conversations.append(session_id, [dict(role='user', content=prompt, display=req.message, images=images, attachments=cards),
                 dict(role='assistant', content=answer, images=[])], request.model, entry.local_only)
             yield sse({"done": True, "cancelled": False, "model": request.model, "content": answer,
-                       "context": context, "usage": usage})
+                       "context": context, "usage": usage,
+                       "provider": actual_provider,
+                       "location": state.providers[actual_provider].location,
+                       "routing_reason": decision.reason if decision else "explicit model"})
         except Exception as exc:  # noqa: BLE001 - surface to the client as an SSE error
             entry.session.restore(previous)
             yield sse({"error": str(exc), "done": True})
@@ -855,11 +941,13 @@ def create_app(
                 steps=[step.to_dict() for step in result.steps],
             )
         request, context, active, decision = _session_request(req, entry, prompt, images, prepared["explicit_model"])
+        if decision is not None and decision.location == "cloud" and decision.confirmation_required and not req.cloud_confirmed:
+            raise HTTPException(status_code=409, detail="cloud confirmation required")
         try:
             response = active.chat(request)
         except NOVAProviderError as exc:
             # Cloud failed -> fallback to local
-            if active is state.cloud_provider and provider.health():
+            if active is not provider and provider.health():
                 try:
                     request.model = settings.llm.default_model
                     response = provider.chat(request)
@@ -880,6 +968,11 @@ def create_app(
             reply=answer,
             model=response.model,
             context=context,
+            provider=response.provider or (decision.provider if decision else settings.llm.provider),
+            location=(state.providers.get(response.provider).location
+                      if response.provider in state.providers
+                      else (decision.location if decision else "local")),
+            routing_reason=decision.reason if decision else "explicit model",
         )
 
     @app.post("/v1/sessions/{session_id}/stop")
@@ -893,7 +986,7 @@ def create_app(
 
     @app.get("/v1/sessions/{session_id}/messages")
     def session_messages(session_id: str) -> dict[str, Any]:
-        entry = get_session(session_id)
+        get_session(session_id)
         return {
             "session_id": session_id,
             "messages": [dict(m, content=m.get('display', m['content'])) for m in state.conversations.messages(session_id)],

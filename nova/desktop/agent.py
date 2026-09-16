@@ -19,11 +19,13 @@ from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.base import ChatCompletionRequest, ChatMessage, NOVAProviderError
-from nova.llm.registry import create_provider
+from nova.llm.orchestrator import InferenceOrchestrator
+from nova.llm.registry import create_provider, create_providers
 from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.plugins import load_plugin_tools
-from nova.tools import ToolResult, registry as tool_registry
+from nova.tools import ToolResult
+from nova.tools import registry as tool_registry
 from nova.tools.host import all_host_tools
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
@@ -82,12 +84,21 @@ def main() -> int:
         logger.info("ollama check: %s (started_now=%s)", st.message, st.started_now)
 
     provider = create_provider(settings.llm)
+    providers = create_providers(settings, local_provider=provider)
+    inference = InferenceOrchestrator(
+        providers, local_provider=settings.llm.provider, audit=AuditLog(settings.audit.file)
+    )
     session = ChatSession(
         max_history_messages=settings.session.max_history_messages,
         system_prompt=settings.session.system_prompt,
     )
     current_model = settings.llm.default_model
-    router = build_router(settings.llm, settings.model_router)
+    router = build_router(
+        settings.llm, settings.model_router, ai_mode=settings.ai.mode,
+        ai_privacy=settings.ai.privacy, open_code=settings.open_code,
+        openai=settings.openai, gemini=settings.gemini,
+        compatible=settings.openai_compatible,
+    )
 
     memory = MemoryService(
         MemoryStore(settings.memory.db_file),
@@ -163,7 +174,10 @@ def main() -> int:
                     model=request.model,
                 )
                 logger.debug("injected memory context:\n%s", context)
-            response = provider.chat(request)
+            confirmed = not decision.confirmation_required or input(
+                f"Send this turn to {decision.provider} cloud? [y/N] "
+            ).strip().lower() in ("y", "yes", "s", "si")
+            response = inference.chat(request, decision, cloud_confirmed=confirmed)
         except NOVAProviderError as exc:
             print(f"[nova error] {exc}")
             logger.warning("nova error: %s", exc)
@@ -294,7 +308,8 @@ def main() -> int:
 
     finally:
         scheduler.stop()
-        provider.close()
+        for managed in {id(item): item for item in providers.values()}.values():
+            managed.close()
         memory.close()
 
     return 0

@@ -24,6 +24,7 @@ La numeración del proyecto se mantiene (PHASE 0-5 completas); las fases de la v
 | PHASE 13 Advanced automation | **PHASE 12 — Automatización avanzada** | ✅ |
 | — (setup/install) | **PHASE 13 — Setup/Install Wizard** | ✅ |
 | — (hybrid/cloud fallback) | **PHASE 14 — Modo HYBRID local-first (OpenCode)** | ✅ |
+| — (hybrid multiproveedor) | **PHASE 16 — Orquestación local + cloud** | ✅ |
 
 ## PHASE 0 — Discovery ✅
 
@@ -282,6 +283,17 @@ Refuerza ADR-013/ADR-014 sin romper el modo LOCAL: reutiliza la abstracción `LL
 - [x] Docs: README, setup, models, architecture, security, api, decisions (ADR-020), CHANGELOG.
 - [ ] (Limitación conocida) El shape de `/session/{id}/message` y `/config/providers` se ajusta a la
   documentación del servidor de OpenCode; verificado con MockTransport, no contra una instancia viva.
+
+---
+
+## PHASE 16 — Orquestación Hybrid AI multiproveedor ✅
+
+- [x] Ollama, OpenAI, Gemini, OpenCode y OpenAI-compatible bajo `LLMProvider`.
+- [x] Registro central de modelos/capacidades y routing local/balanced/performance/custom.
+- [x] Privacidad absoluta, sensibilidad, redacción heurística, confirmación y fallback controlado.
+- [x] Hardware, contexto y latencia; Voice Call solicita `VOICE/low` sin acoplarse al proveedor.
+- [x] Ajustes, transparencia, audit/usage y credenciales seguras.
+- [x] Tests unitarios con transports/proveedores simulados; ninguna key real necesaria.
 
 ---
 

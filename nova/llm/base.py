@@ -1,14 +1,50 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Iterator, Sequence
-
 import threading
+from abc import ABC, abstractmethod
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class ProviderErrorCode(str, Enum):
+    unavailable = "unavailable"
+    authentication = "authentication"
+    rate_limited = "rate_limited"
+    timeout = "timeout"
+    invalid_request = "invalid_request"
+    invalid_response = "invalid_response"
+    cancelled = "cancelled"
 
 
 class NOVAProviderError(Exception):
-    """Raised when an LLM provider request fails or returns an invalid shape."""
+    """Provider-independent inference error safe to expose to Core callers."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: ProviderErrorCode = ProviderErrorCode.unavailable,
+        provider: str = "",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.provider = provider
+        self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    chat: bool = True
+    streaming: bool = False
+    model_listing: bool = False
+    embeddings: bool = False
+    tool_calling: bool = False
+    structured_output: bool = False
+    vision: bool = False
+    cancellation: bool = True
 
 
 @dataclass
@@ -29,7 +65,7 @@ class StreamCancellation:
         return self._stopped.is_set()
 
     @classmethod
-    def fresh(cls) -> "StreamCancellation":
+    def fresh(cls) -> StreamCancellation:
         return cls()
 
 
@@ -54,6 +90,8 @@ class ChatCompletionRequest:
     model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -61,6 +99,7 @@ class ChatCompletionResponse:
     message: ChatMessage
     model: str
     usage: dict[str, Any] | None = None
+    provider: str = ""
 
 
 @dataclass
@@ -68,6 +107,8 @@ class ModelInfo:
     name: str
     size: int = 0
     modified_at: str = ""
+    context_window: int | None = None
+    capabilities: frozenset[str] = frozenset()
 
 
 class LLMProvider(ABC):
@@ -75,6 +116,8 @@ class LLMProvider(ABC):
 
     #: Whether this provider implements embedding (`embed_text`).
     supports_embedding: bool = False
+    provider_name: str = "unknown"
+    location: str = "cloud"
 
     @abstractmethod
     def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
@@ -115,3 +158,10 @@ class LLMProvider(ABC):
 
     def supports_images(self, model: str) -> bool:
         return False
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            streaming=True,
+            model_listing=True,
+            embeddings=self.supports_embedding,
+        )

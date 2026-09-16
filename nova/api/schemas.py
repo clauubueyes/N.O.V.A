@@ -16,6 +16,9 @@ class ChatRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = False
+    cloud_confirmed: bool = False
+    task: str | None = None
+    latency: str = "normal"
 
 
 class ChatResponse(BaseModel):
@@ -23,6 +26,9 @@ class ChatResponse(BaseModel):
     model: str
     message: dict[str, str]
     usage: dict | None = None
+    provider: str = ""
+    location: str = "local"
+    routing_reason: str = ""
 
 
 class ModelInfoOut(BaseModel):
@@ -51,6 +57,9 @@ class SessionChatRequest(BaseModel):
     model: str | None = None
     attachments: list[str] = Field(default_factory=list, max_length=4)
     stream: bool = False
+    cloud_confirmed: bool = False
+    task: str | None = None
+    latency: str = "normal"
 
 
 class SessionChatResponse(BaseModel):
@@ -60,6 +69,9 @@ class SessionChatResponse(BaseModel):
     context: str = ""
     agent: str = ""
     steps: list[dict] = Field(default_factory=list)
+    provider: str = ""
+    location: str = "local"
+    routing_reason: str = ""
 
 
 class AgentInfoOut(BaseModel):

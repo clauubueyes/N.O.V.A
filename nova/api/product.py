@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, SecretStr
 
 from nova import __version__
 from nova.core.config import PermissionSettings, load_settings
 from nova.core.paths import default_config_path
+from nova.core.secrets import SecretStore, SecretStoreUnavailable
 from nova.desktop.configuration import edit_configuration
-from nova.desktop.tunnel import TunnelError, core_local_url
+from nova.desktop.tunnel import TunnelError
 from nova.llm.base import NOVAProviderError
 from nova.llm.router import build_router
 from nova.setup.catalog import SPECS_BY_ROLE
@@ -32,6 +34,31 @@ class PreferenceInput(BaseModel):
     categories: PermissionSettings | None = None
     roots: list[str] | None = Field(default=None, max_length=30)
     autostart: bool | None = None
+    routing: RoutingPreferenceInput | None = None
+    providers: list[ProviderPreferenceInput] | None = Field(default=None, max_length=12)
+
+
+class RoutingPreferenceInput(BaseModel):
+    policy: Literal['local', 'balanced', 'performance', 'custom']
+    preferred_local_model: str = ""
+    preferred_cloud_provider: str = ""
+    preferred_cloud_model: str = ""
+    maximum_context: int | None = Field(default=None, ge=1024)
+    allow_cloud_fallback: bool = False
+    require_cloud_confirmation: bool = False
+    never_send_data_to_cloud: bool = False
+    never_send_sensitive_data_to_cloud: bool = True
+    redact_cloud_requests: bool = True
+
+
+class ProviderPreferenceInput(BaseModel):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,31}$")
+    enabled: bool = False
+    base_url: str = ""
+    model: str = ""
+    api_key: SecretStr | None = Field(default=None, repr=False)
+    api_key_env: str = ""
+    location: Literal['local', 'cloud'] = 'cloud'
 
 
 class PrepareInput(BaseModel):
@@ -66,10 +93,30 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
         current.llm.models = fresh.llm.models
         current.desktop = fresh.desktop
         current.ai = fresh.ai
+        current.model_router = fresh.model_router
+        current.openai = fresh.openai
+        current.gemini = fresh.gemini
+        current.open_code = fresh.open_code
+        current.openai_compatible = fresh.openai_compatible
         current.permissions.categories = fresh.permissions.categories
         current.host.roots = fresh.host.roots
-        state.router = build_router(current.llm, current.model_router, ai_mode=current.ai.mode,
-                                    ai_privacy=current.ai.privacy, open_code=current.open_code)
+        from nova.llm.orchestrator import InferenceOrchestrator
+        from nova.llm.registry import create_providers
+        previous = state.providers
+        state.providers = create_providers(current, local_provider=state.provider)
+        state.cloud_provider = next((p for p in state.providers.values() if p.location == 'cloud'), None)
+        state.inference = InferenceOrchestrator(
+            state.providers, local_provider=current.llm.provider, audit=state.audit
+        )
+        for managed in previous.values():
+            if managed is not state.provider and managed not in state.providers.values():
+                managed.close()
+        state.router = build_router(
+            current.llm, current.model_router, ai_mode=current.ai.mode,
+            ai_privacy=current.ai.privacy, open_code=current.open_code,
+            openai=current.openai, gemini=current.gemini,
+            compatible=current.openai_compatible,
+        )
         if state.approvals:
             state.approvals.cancel_all()
 
@@ -86,7 +133,58 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
                     prepared=settings.desktop.prepared, mode=settings.desktop.mode,
                     model=settings.llm.default_model, privacy=settings.ai.privacy,
                     categories=settings.permissions.categories, roots=settings.host.roots,
-                    remote=remote, voice=False)
+                    remote=remote, voice=False,
+                    routing={
+                        'policy': settings.model_router.policy,
+                        'preferred_local_model': settings.model_router.preferred_local_model,
+                        'preferred_cloud_provider': settings.model_router.preferred_cloud_provider,
+                        'preferred_cloud_model': settings.model_router.preferred_cloud_model,
+                        'maximum_context': settings.model_router.maximum_context,
+                        'allow_cloud_fallback': settings.model_router.allow_cloud_fallback,
+                        'require_cloud_confirmation': settings.model_router.require_cloud_confirmation,
+                        'never_send_data_to_cloud': settings.model_router.never_send_data_to_cloud,
+                        'never_send_sensitive_data_to_cloud': settings.model_router.never_send_sensitive_data_to_cloud,
+                        'redact_cloud_requests': settings.model_router.redact_cloud_requests,
+                    },
+                    ai_providers=[
+                        {
+                            'name': settings.llm.provider,
+                            'enabled': True,
+                            'base_url': settings.llm.base_url,
+                            'model': settings.llm.default_model,
+                            'api_key_env': '',
+                            'credential_configured': True,
+                            'location': 'local',
+                            'healthy': state.providers[settings.llm.provider].health(),
+                        },
+                    ] + [
+                        {
+                            'name': name,
+                            'enabled': configured.enabled,
+                            'base_url': configured.base_url,
+                            'model': configured.default_model,
+                            'api_key_env': getattr(configured, 'api_key_env', ''),
+                            'credential_configured': bool(getattr(configured, 'resolve_api_key', lambda: '')()),
+                            'location': 'cloud',
+                            'healthy': state.providers[name].health() if name in state.providers else False,
+                        }
+                        for name, configured in (
+                            ('openai', settings.openai), ('gemini', settings.gemini),
+                            ('opencode', settings.open_code),
+                        )
+                    ] + [
+                        {
+                            'name': configured.name,
+                            'enabled': configured.enabled,
+                            'base_url': configured.base_url,
+                            'model': configured.default_model,
+                            'api_key_env': configured.api_key_env,
+                            'credential_configured': bool(configured.resolve_api_key()),
+                            'location': configured.location,
+                            'healthy': state.providers[configured.name].health() if configured.name in state.providers else False,
+                        }
+                        for configured in settings.openai_compatible
+                    ])
 
     @router.patch('/preferences')
     def preferences(payload: PreferenceInput):
@@ -117,13 +215,48 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
                 data.setdefault('permissions', {})['categories'] = categories
             if payload.roots is not None:
                 data.setdefault('host', {})['roots'] = payload.roots
+            if payload.routing is not None:
+                data['model_router'] = {
+                    **data.get('model_router', {}),
+                    **payload.routing.model_dump(),
+                }
+                if payload.routing.never_send_data_to_cloud or payload.routing.policy == 'local':
+                    data.setdefault('ai', {}).update(mode='local', privacy='local_only')
+                else:
+                    data.setdefault('ai', {}).update(mode='hybrid', privacy='cloud_allowed')
+            if payload.providers is not None:
+                custom = []
+                for item in payload.providers:
+                    if item.base_url:
+                        parsed = urlsplit(item.base_url)
+                        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+                            raise ValueError(f'Dirección no válida para {item.name}.')
+                    secret_id = f'ai-provider/{item.name}'
+                    if item.api_key is not None and item.api_key.get_secret_value():
+                        SecretStore().set(secret_id, item.api_key.get_secret_value())
+                    row = {
+                        'enabled': item.enabled,
+                        'base_url': item.base_url,
+                        'default_model': item.model,
+                        'api_key_env': item.api_key_env,
+                        'secret_id': secret_id,
+                    }
+                    if item.name == 'opencode':
+                        row.pop('api_key_env', None)
+                        row.pop('secret_id', None)
+                        data['open_code'] = {**data.get('open_code', {}), **row}
+                    elif item.name in ('openai', 'gemini'):
+                        data[item.name] = {**data.get(item.name, {}), **row}
+                    else:
+                        custom.append({**row, 'name': item.name, 'location': item.location})
+                data['openai_compatible'] = custom
         try:
             fresh = edit_configuration(path, change)
             apply_preferences(fresh)
             if payload.autostart is not None:
                 from nova.setup.autostart import set_autostart
                 set_autostart(payload.autostart, target='nova-desktop')
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, SecretStoreUnavailable) as exc:
             raise HTTPException(400, str(exc)) from exc
         return status()
 
@@ -175,7 +308,6 @@ def build_product_router(state, *, config_path: Path | None, desktop: bool) -> A
 
     @router.get('/memory')
     def memory():
-        from dataclasses import asdict
         from nova.memory import MemoryStore
         store = MemoryStore(state.settings.memory.db_file)
         try:

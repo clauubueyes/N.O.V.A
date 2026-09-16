@@ -550,7 +550,7 @@ const NovaVoice = (() => {
           return;
         }
         addLine("user", text);
-        const data = await api("POST", "/v1/sessions/" + sessionId + "/chat", {message: text, model: $("model").value || null});
+        const data = await api("POST", "/v1/sessions/" + sessionId + "/chat", {message: text, model: $("model").value || null, task: "VOICE", latency: "low"});
         if (m !== token) return;
         const reply = (data.reply || "").trim();
         addLine("assistant", reply);

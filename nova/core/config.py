@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 ENV_PREFIX = "NOVA_"
@@ -38,6 +38,15 @@ class PrivacyPolicy(str, Enum):
 
     local_only = "local_only"
     cloud_allowed = "cloud_allowed"
+    cloud_required = "cloud_required"
+    user_confirmation_required = "user_confirmation_required"
+
+
+class RoutingPolicy(str, Enum):
+    local = "local"
+    balanced = "balanced"
+    performance = "performance"
+    custom = "custom"
 
 
 class LLMSettings(BaseSettings):
@@ -68,6 +77,48 @@ class OpenCodeProviderSettings(BaseSettings):
     models: dict[str, str] = Field(default_factory=dict)
 
 
+class APIKeyProviderSettings(BaseSettings):
+    enabled: bool = False
+    base_url: str
+    api_key: SecretStr | None = Field(default=None, exclude=True, repr=False)
+    api_key_env: str = ""
+    secret_id: str = ""
+    timeout_s: float = 60.0
+    default_model: str = ""
+    models: dict[str, str] = Field(default_factory=dict)
+    temperature: float = 0.7
+
+    def resolve_api_key(self) -> str:
+        if self.api_key_env:
+            value = os.environ.get(self.api_key_env, "")
+            if value:
+                return value
+        if self.secret_id:
+            try:
+                from nova.core.secrets import SecretStore
+                value = SecretStore().get(self.secret_id)
+                if value:
+                    return value
+            except RuntimeError:
+                pass
+        return self.api_key.get_secret_value() if self.api_key is not None else ""
+
+
+class OpenAIProviderSettings(APIKeyProviderSettings):
+    base_url: str = "https://api.openai.com/v1"
+    api_key_env: str = "OPENAI_API_KEY"
+
+
+class GeminiProviderSettings(APIKeyProviderSettings):
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    api_key_env: str = "GEMINI_API_KEY"
+
+
+class OpenAICompatibleProviderSettings(APIKeyProviderSettings):
+    name: str
+    location: Literal["local", "cloud"] = "cloud"
+
+
 class ModelRouterSettings(BaseSettings):
     """PHASE 7 + 14 — routing policy.
 
@@ -83,6 +134,18 @@ class ModelRouterSettings(BaseSettings):
     battery: bool = True
     cloud_enabled: bool = False
     strategy: str = "local-first"
+    policy: RoutingPolicy = RoutingPolicy.balanced
+    preferred_local_model: str = ""
+    preferred_cloud_provider: str = ""
+    preferred_cloud_model: str = ""
+    maximum_context: int | None = None
+    allow_cloud_fallback: bool = False
+    require_cloud_confirmation: bool = False
+    never_send_data_to_cloud: bool = False
+    never_send_sensitive_data_to_cloud: bool = True
+    redact_cloud_requests: bool = True
+    low_resource_ram_gb: float = 8.0
+    high_resource_ram_gb: float = 24.0
 
 
 class AISettings(BaseSettings):
@@ -384,6 +447,9 @@ class NovaSettings(BaseSettings):
     # PHASE 14 — hybrid mode settings
     ai: AISettings = AISettings()
     open_code: OpenCodeProviderSettings = OpenCodeProviderSettings()
+    openai: OpenAIProviderSettings = OpenAIProviderSettings()
+    gemini: GeminiProviderSettings = GeminiProviderSettings()
+    openai_compatible: list[OpenAICompatibleProviderSettings] = Field(default_factory=list)
     desktop: DesktopSettings = DesktopSettings()
     rag: RagSettings = RagSettings()
 
@@ -402,6 +468,12 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "battery": "battery",
         "cloud_enabled": "cloud_enabled",
         "strategy": "strategy",
+        "policy": "policy",
+        "allow_cloud_fallback": "allow_cloud_fallback",
+        "require_cloud_confirmation": "require_cloud_confirmation",
+        "never_send_data_to_cloud": "never_send_data_to_cloud",
+        "never_send_sensitive_data_to_cloud": "never_send_sensitive_data_to_cloud",
+        "redact_cloud_requests": "redact_cloud_requests",
     },
     "ai": {
         "mode": "mode",
@@ -410,6 +482,20 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
     "open_code": {
         "enabled": "enabled",
         "base_url": "base_url",
+        "timeout_s": "timeout_s",
+        "default_model": "default_model",
+    },
+    "openai": {
+        "enabled": "enabled",
+        "base_url": "base_url",
+        "api_key_env": "api_key_env",
+        "timeout_s": "timeout_s",
+        "default_model": "default_model",
+    },
+    "gemini": {
+        "enabled": "enabled",
+        "base_url": "base_url",
+        "api_key_env": "api_key_env",
         "timeout_s": "timeout_s",
         "default_model": "default_model",
     },

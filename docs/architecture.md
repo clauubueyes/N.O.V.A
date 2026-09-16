@@ -50,6 +50,10 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 | `nova.llm.base` | Interfaz `LLMProvider` (chat, listado, health, embeddings) + tipos `ChatMessage`, `ChatCompletionRequest/Response`, `NOVAProviderError`. |
 | `nova.llm.ollama` | `OllamaProvider`: API compatible OpenAI (`/v1/chat/completions`), `/api/tags` y embeddings (`/api/embed`). |
 | `nova.llm.opencode` | `OpenCodeProvider` (PHASE 14): habla con el servidor HTTP de OpenCode (por defecto `http://127.0.0.1:4096`), sesión efímera por `chat()`; sin SDK ni API keys (auth delegada a OpenCode). |
+| `nova.llm.openai_compatible` | Adaptador HTTP común para OpenAI oficial y endpoints compatibles; streaming SSE y errores normalizados. |
+| `nova.llm.gemini` | Adaptador Gemini REST (`generateContent`, streaming y listado de modelos). |
+| `nova.llm.model_registry` | Fuente central de modelos, ubicación, contexto, capacidades, disponibilidad y coste opcional. |
+| `nova.llm.orchestrator` | Ejecuta decisiones, redacción, confirmación, fallback, audit y usage sin exponer proveedores al Core. |
 | `nova.llm.registry` | Registro de proveedores por nombre; `create_provider` es la única fábrica usada por todo el código. |
 | `nova.llm.resources` | `ResourceManager` (PHASE 7): snapshot best-effort de RAM/CPU/GPU/batería con readers inyectables. |
 | `nova.llm.router` | `ModelRouter` (PHASE 7 + 14): clasifica la tarea y elige **proveedor + modelo** por complejidad + recursos + privacidad; `build_router` con wires de `ai.mode`/`ai.privacy`/`open_code`. En HYBRID, las tareas `heavy` sin recursos locales pueden pasar a OpenCode (local-first, ADR-020). |
@@ -78,15 +82,18 @@ Sistema      -> Resultado -> N.O.V.A. -> Usuario
 
 El resto del código **nunca** conoce a Ollama: solo depende de `nova.llm.base.LLMProvider` y del settings `llm.provider`. Añadir un proveedor = implementar la interfaz + `registry.register("nombre", Clase)`. Ver [decisions.md](decisions.md) ADR-003.
 
-PHASE 14: hay dos proveedores registrados — `ollama` (local, principal) y `opencode` (cloud, opcional en modo HYBRID). El código nunca habla con OpenCode por CLI; solo por `OpenCodeProvider`, y siempre vía el `ModelRouter` cuando la política de privacidad lo permite (ADR-020).
+Los proveedores registrados son `ollama`, `openai`, `gemini`, `opencode` y
+`openai_compatible`. Solo Ollama está activo por defecto; los demás requieren configuración explícita.
+Toda selección pasa por `ModelRouter` y `InferenceOrchestrator` (ADR-020/ADR-022).
 
 ## Flujo de una conversación
 
 1. `nova.cli.chat` construye la sesión y pide entrada al usuario.
 2. `ChatSession` añade `user`, acota el historial y compone `ChatCompletionRequest`.
 3. `nova.memory` persiste el turno y recupera la memoria relevante (`MemoryService.context`), inyectada como mensaje `system` antes del turno del usuario (si la hay).
-4. `create_provider(settings.llm)` entrega el proveedor local configurado; en HYBRID se crea además `OpenCodeProvider` si `open_code.enabled` y su servidor responde.
-5. `ModelRouter.route_for(text)` devuelve `RoutingDecision` (ahora con `provider`); el chat/API usa el provider elegido y, si falla, cae al otro (fallback bidireccional).
+4. `create_providers(settings)` entrega Ollama y las integraciones opcionales habilitadas.
+5. `ModelRouter.route_for(text)` devuelve `RoutingDecision`; `InferenceOrchestrator` aplica privacidad,
+   redacción, confirmación y fallback controlado antes de invocar el proveedor.
 6. El proveedor envía la petición y devuelve `ChatCompletionResponse`.
 7. La respuesta se añade a la sesión, se persiste en la memoria y se muestra; todo se loggea.
 
@@ -400,3 +407,17 @@ del host.
 - La memoria nunca interrumpe el diálogo: si el embedding falla o no existe, se degrada a keywords.
 - La API (y la web) solo hablan con el Core: nunca conocen los detalles de Ollama ni de las herramientas.
 - Los Agents son config, no herencia: una clase `Agent` + presets paramétricos (ADR-012). El LLM propone, el `ToolRunner` decide y audita.
+
+## Orquestación Hybrid AI
+
+`nova.llm.base.LLMProvider` es el contrato común de chat, streaming, listado, salud, capacidades,
+cancelación y errores normalizados. `create_providers` construye únicamente integraciones configuradas;
+`ModelRegistry` es la fuente central de metadatos y `InferenceOrchestrator` ejecuta la decisión del
+`ModelRouter`, aplica redacción en el borde cloud y controla el fallback. Están disponibles Ollama,
+OpenAI, Gemini, OpenCode y endpoints OpenAI-compatible. El Core, la API, CLI, Desktop Agent y Voice
+Call nunca necesitan lógica específica de proveedor.
+
+La precedencia es: `never_send_data_to_cloud` → privacidad sensible/local-only → capacidades →
+disponibilidad/recursos → política y preferencias. Los resultados de routing se auditan sin prompts ni
+respuestas completos. La memoria y los permisos permanecen locales; cambiar de proveedor no habilita
+ninguna herramienta ni evita `ToolRunner`.

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any
 
 import httpx
 
@@ -29,6 +30,8 @@ PullProgress = Callable[[int, int | None, str], None]
 
 class OllamaProvider(LLMProvider):
     supports_embedding = True
+    provider_name = "ollama"
+    location = "local"
 
     def __init__(self, settings: LLMSettings, client: httpx.Client | None = None) -> None:
         self._settings = settings
@@ -75,6 +78,7 @@ class OllamaProvider(LLMProvider):
             ),
             model=data.get("model", payload["model"]),
             usage=data.get("usage"),
+            provider="ollama",
         )
 
     def list_models(self) -> list[ModelInfo]:
@@ -238,8 +242,7 @@ class OllamaProvider(LLMProvider):
                         break
                     if not line:
                         continue
-                    if line.startswith("data: "):
-                        line = line[6:]
+                    line = line.removeprefix("data: ")
                     if line.strip() == "[DONE]":
                         break
                     try:

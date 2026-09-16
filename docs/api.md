@@ -14,6 +14,10 @@ class LLMProvider(ABC):
     def close(self) -> None: ...
 ```
 
+El contrato incluye además `stream(request, cancellation)`, `capabilities()` y errores
+`NOVAProviderError` normalizados (`authentication`, `rate_limited`, `timeout`, `unavailable`, etc.).
+Los adaptadores actuales son Ollama, OpenAI, Gemini, OpenCode y OpenAI-compatible.
+
 `embed_text` devuelve un vector por entrada (p. ej. `nomic-embed-text` vía `/api/embed`); en proveedores que no la soporten lanza `NOVAProviderError`.
 
 Tipos:
@@ -278,6 +282,8 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 |---|---|
 | `GET /healthz` | Salud: `provider`, `cloud_provider`, `ai_mode`, `privacy`, `status`, `version`, `uptime_s`, `sessions`, `model`, `rag_enabled`, `streams`. |
 | `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). Cacheado el tiempo configurable (`models_cache_ttl_s`, 2 s por defecto). |
+| `GET /v1/ai/providers` | Proveedores configurados, salud, ubicación, capacidades y política de routing; nunca devuelve claves. |
+| `GET /v1/ai/models` | Registro multiproveedor con capacidades, contexto, ubicación, latencia, recursos y coste opcional. |
 | `GET /v1/audit?limit=50` | Observabilidad: últimas entradas del audit log (`limit` entre 1 y 200) -> `{"count", "entries"}`. |
 | `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`; web tools solo con `web.enabled`; tools de plugins solo si hay plugins cargados). |
 | `POST /v1/route` | PHASE 7 + 14 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "provider", "role", "model", "reason"}` (`provider` es `ollama` u `opencode`). |
@@ -303,7 +309,9 @@ Notas:
 - Las sesiones son persistentes: tras reiniciar la API, `GET /v1/sessions` lista las conversaciones guardadas en SQLite y abrir una restaura su historial, modelo y modo local (`local_only`). Un borrado en `DELETE /v1/sessions/{id}` elimina también su persistencia.
 - RAG opcional (`settings.rag.enabled`): los adjuntos de texto grandes (≥ `index_above_chars`, 12 000 caracteres) se indexan en `<memoria>.rag.db` (FTS5 + embeddings) y solo los fragmentos relevantes se inyectan en el contexto, junto a la memoria.
 - **Streaming SSE**: `POST /v1/chat` y `POST /v1/sessions/{id}/chat` aceptan `"stream": true` y responden `Content-Type: text/event-stream` con marcos `data: {json}\n\n`: `{"delta": "...", "done": false}` (fragmento), `{"usage": {...}}`, y un marco final `{"done": true, "cancelled", "model", "content"}` (o `{"error", "done": true}`). El estado (memoria, transcript, conversaciones) solo se registra al terminar el stream; ante error o cancelación se restaura el historial previo. `POST /v1/sessions/{id}/stop` cancela el stream en curso (los agentes no soportan streaming). Dos streams a la vez para la misma sesión -> `409`.
-- PHASE 7 + 14: si `POST /v1/sessions/{id}/chat` no recibe `model`, el `ModelRouter` elige **proveedor + modelo** por turno según el texto (tarea + recursos + privacidad). En HYBRID las tareas pesadas sin recursos pueden usar OpenCode; si el cloud falla, `502` solo cuando el fallback local también falla. `POST /v1/route` expone esa decisión.
+- Si `POST /v1/sessions/{id}/chat` no recibe `model`, el `ModelRouter` elige **proveedor + modelo**
+  según tarea, contexto, capacidades, recursos, latencia, privacidad y preferencias. En HYBRID puede usar
+  cualquier proveedor configurado; `POST /v1/route` expone la decisión y su razón.
 - Si la sesión se creó con `agent`, `/chat` usa `Agent.act` y devuelve `steps` (una entrada por tool-call: nombre, args, ok, mensaje, datos) además de la respuesta.
 - Los agentes estatelés persisten por nombre en el `AppState` (`nova.api.app`): mantienen sesión, memoria propia y historial entre llamadas.
 - La API nunca pregunta interactivamente: un permiso `ASK` se resuelve denegado (`result.ok == false`). Las reglas `allow` siguen ejecutando directo (p. ej. `calculate`).

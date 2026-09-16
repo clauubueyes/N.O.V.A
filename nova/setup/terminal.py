@@ -205,7 +205,7 @@ class Terminal:
     def table(self, headers: list[str], rows: list[list[str]]) -> None:
         if self.json_mode:
             for row in rows:
-                payload = {h: (r[i] if i < len(r) else "") for i, h in enumerate(headers)}
+                payload = {h: (row[i] if i < len(row) else "") for i, h in enumerate(headers)}
                 self._emit("row", str(payload).replace("'", '"'))
             return
         widths = [len(h) for h in headers]

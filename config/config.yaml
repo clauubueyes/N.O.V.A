@@ -17,6 +17,16 @@ model_router:
   battery: true
   cloud_enabled: false
   strategy: local-first
+  policy: local
+  preferred_local_model: ""
+  preferred_cloud_provider: ""
+  preferred_cloud_model: ""
+  maximum_context: null
+  allow_cloud_fallback: false
+  require_cloud_confirmation: false
+  never_send_data_to_cloud: false
+  never_send_sensitive_data_to_cloud: true
+  redact_cloud_requests: true
 ai:
   mode: local
   privacy: local_only
@@ -26,6 +36,19 @@ open_code:
   timeout_s: 120.0
   default_model: ""
   models: {}
+openai:
+  enabled: false
+  base_url: https://api.openai.com/v1
+  api_key_env: OPENAI_API_KEY
+  default_model: ""
+  models: {}
+gemini:
+  enabled: false
+  base_url: https://generativelanguage.googleapis.com/v1beta
+  api_key_env: GEMINI_API_KEY
+  default_model: ""
+  models: {}
+openai_compatible: []
 logging:
   level: INFO
   file: logs/nova.log

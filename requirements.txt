@@ -9,3 +9,5 @@ PyYAML>=6.0
 # PHASE 4 — REST API
 fastapi>=0.115
 uvicorn>=0.30
+rich>=13.0
+keyring>=25.0

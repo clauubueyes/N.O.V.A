@@ -971,6 +971,10 @@ class Installer(QWidget):
             self._location.setText(str(self._target))
 
     def _get_version(self) -> str:
+        from nova import __version__
+
+        if __version__:
+            return __version__
         try:
             import tomllib
             for candidate in (
@@ -981,7 +985,7 @@ class Installer(QWidget):
                     return tomllib.loads(candidate.read_text(encoding="utf-8"))["project"]["version"]
         except Exception:
             pass
-        return "0.16.0"
+        return "unknown"
 
     def _clear_layout(self, layout):
         while layout.count():

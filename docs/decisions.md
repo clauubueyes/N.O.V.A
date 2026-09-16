@@ -2,6 +2,18 @@
 
 Formato ligero de "Architecture Decision Records". Cada decisión importante se documenta aquí.
 
+## ADR-022 — Orquestación multiproveedor local-first
+
+- **Fecha:** 2026-09-16
+- **Contexto:** el fallback especial de OpenCode no escalaba a OpenAI, Gemini o gateways y podía dispersar
+  decisiones de privacidad entre clientes.
+- **Decisión:** mantener `LLMProvider`, evolucionar `ModelRegistry` y `ModelRouter`, y centralizar ejecución,
+  redacción, fallback y audit en `InferenceOrchestrator`. Ollama sigue siendo el proveedor local por defecto.
+  Cloud es opt-in; `never_send_data_to_cloud` y tareas sensibles bloquean cloud antes de capacidad/rendimiento.
+- **Consecuencias:** los clientes consumen una respuesta unificada; credenciales en env/keyring; nuevos
+  proveedores se añaden con un adaptador y metadatos, sin modificar chat, voz, memoria o permisos.
+- **Estado:** aceptada.
+
 ## ADR-001 — Stack: Python 3.11 + FastAPI
 
 - **Fecha:** 2026-09-06

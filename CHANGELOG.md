@@ -2,6 +2,21 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.18.0] - 2026-09-16
+
+### Añadido — Orquestación Hybrid AI local-first
+
+- Proveedores intercambiables para Ollama, OpenAI, Gemini, OpenCode y endpoints OpenAI-compatible.
+- Registro central multiproveedor con ubicación, contexto, capacidades, disponibilidad y coste opcional.
+- Políticas `local`, `balanced`, `performance` y `custom`; selección por tarea, contexto, recursos,
+  latencia, privacidad y preferencias, con `VOICE`/`FAST_INTERACTION` desacoplado del proveedor.
+- Controles absolutos de privacidad, confirmación cloud, redacción heurística y credenciales mediante
+  variables de entorno o el almacén seguro del sistema operativo (`keyring`).
+- Fallback controlado sin duplicar streams, errores normalizados, auditoría sin prompts y métricas de uso.
+- Ajustes web de proveedores/routing y endpoints `/v1/ai/providers` y `/v1/ai/models`.
+- El instalador muestra la versión empaquetada correcta y documenta la actualización in-place con
+  staging verificado, rollback y conservación de configuración, conversaciones y modelos.
+
 ## [0.17.2] - 2026-09-16
 
 ### Añadido — Voz en la interfaz web (Fase 8b)

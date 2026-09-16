@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from nova.core.config import AIMode, ModelRouterSettings, PrivacyPolicy
+from nova.core.config import AIMode, ModelRouterSettings, PrivacyPolicy, RoutingPolicy
 from nova.llm.resources import ResourceManager, SystemResources
 from nova.llm.router import ModelRouter
 
@@ -315,3 +315,42 @@ class TestHybridRouting:
             cloud_catalog=self.CLOUD,
         ).route_for("cuéntame una historia")
         assert general.provider == "ollama"
+
+    def test_never_cloud_has_absolute_precedence(self) -> None:
+        router = _router(
+            resources=_low_ram(), ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+        )
+        router._settings.never_send_data_to_cloud = True
+        assert router.route_for("haz un analisis complejo").provider == "ollama"
+
+    def test_sensitive_input_stays_local(self) -> None:
+        decision = _router(
+            resources=_low_ram(), ai_mode=AIMode.hybrid,
+            ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+        ).route_for("analiza esto API_KEY=abc123456789")
+        assert decision.provider == "ollama"
+
+    def test_voice_requests_fast_local_model(self) -> None:
+        decision = _router().route_for("hola", task="VOICE", latency="low")
+        assert decision.task_kind == "fast_interaction"
+        assert decision.model == "llama3.2:1b"
+
+    def test_performance_policy_can_choose_cloud_on_capable_hardware(self) -> None:
+        router = _router(
+            ai_mode=AIMode.hybrid, ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+        )
+        router._settings.policy = RoutingPolicy.performance
+        assert router.route_for("haz un analisis complejo").provider == "opencode"
+
+    def test_long_context_is_explainable(self) -> None:
+        router = _router(
+            ai_mode=AIMode.hybrid, ai_privacy=PrivacyPolicy.cloud_allowed,
+            cloud_catalog=self.CLOUD,
+        )
+        decision = router.route_for("analiza este proyecto completo")
+        assert decision.task_kind == "long_context"
+        assert "long_context" in decision.reason

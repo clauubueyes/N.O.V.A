@@ -1528,3 +1528,18 @@ dialog h3 { font-size: 14px; margin: 18px 0 6px; color: var(--text); font-weight
 @media (prefers-reduced-motion: reduce) {
   .voice-wave-bars .bar, .call-wave .bar { transition: none; }
 }
+
+.provider-card {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface, transparent);
+}
+
+.provider-card > input {
+  width: 100%;
+  box-sizing: border-box;
+}

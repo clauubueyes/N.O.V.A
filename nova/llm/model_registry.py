@@ -14,8 +14,11 @@ call per message. Everything is best-effort: unknown models degrade to
 """
 
 import time
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Iterable
+from enum import Enum
+
+from nova.llm.base import LLMProvider, ModelInfo
 
 _VISION_FAMILIES = {
     "llava",
@@ -29,7 +32,6 @@ _VISION_FAMILIES = {
     "qwen2.5vl",
     "llama3.2-vision",
     "granite3.2-vision",
-    "minicpm-v",
 }
 # Match these tokens anywhere in the model name to flag vision capability.
 _VISION_TOKENS = ("llava", "moondream", "bakllava", "-vl", "-vision", "minicpm-v")
@@ -67,9 +69,13 @@ class ModelCapabilities:
     parameter_size: str = ""
     quantization: str = ""
     source: str = "heuristic"  # "heuristic" | "ollama:/api/show"
+    reasoning: bool = False
+    tool_calling: bool = False
+    streaming: bool = True
+    structured_output: bool = False
 
     @classmethod
-    def from_show(cls, show_info: dict, *, installed_name: str = "") -> "ModelCapabilities":
+    def from_show(cls, show_info: dict, *, installed_name: str = "") -> ModelCapabilities:
         caps = set(show_info.get("capabilities", []) or [])
         return cls(
             vision="vision" in caps,
@@ -82,13 +88,36 @@ class ModelCapabilities:
         )
 
     @classmethod
-    def from_name(cls, name: str) -> "ModelCapabilities":
+    def from_name(cls, name: str) -> ModelCapabilities:
         lowered = name.lower()
         base = lowered.split(":")[0]
         vision = any(token in base for token in _VISION_TOKENS)
         embedding = any(token in lowered for token in _EMBEDDING_TOKENS)
         context_length = _KNOWN_CONTEXT_BY_FAMILY.get(base)
         return cls(vision=vision, embedding=embedding, context_length=context_length, family=base)
+
+
+class ModelLocation(str, Enum):
+    local = "local"
+    cloud = "cloud"
+
+
+@dataclass(frozen=True)
+class RegisteredModel:
+    provider: str
+    model_id: str
+    display_name: str
+    location: ModelLocation
+    capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
+    latency: str = "medium"
+    resource_class: str = "unknown"
+    available: bool = True
+    cost_input_per_million: float | None = None
+    cost_output_per_million: float | None = None
+
+    @property
+    def key(self) -> str:
+        return f"{self.provider}:{self.model_id}"
 
 
 class ModelRegistry:
@@ -106,6 +135,7 @@ class ModelRegistry:
         self._stamp: dict[str, float] = {}
         self._installed: list[str] = []
         self._installed_stamp = 0.0
+        self._models: dict[str, RegisteredModel] = {}
 
     # -- data -------------------------------------------------------------
     def note(self, name: str, caps: ModelCapabilities | None = None) -> None:
@@ -114,6 +144,66 @@ class ModelRegistry:
             caps = ModelCapabilities.from_name(name)
         self._info[name] = caps
         self._stamp[name] = time.time()
+
+    def register(self, model: RegisteredModel) -> None:
+        self._models[model.key] = model
+        if model.location == ModelLocation.local:
+            self.note(model.model_id, model.capabilities)
+
+    def register_provider_models(
+        self,
+        provider_name: str,
+        provider: LLMProvider,
+        models: Iterable[ModelInfo] | None = None,
+    ) -> list[RegisteredModel]:
+        try:
+            infos = list(models if models is not None else provider.list_models())
+        except Exception:  # noqa: BLE001 - availability is metadata, never fatal
+            infos = []
+        location = ModelLocation.local if provider.location == "local" else ModelLocation.cloud
+        result: list[RegisteredModel] = []
+        for info in infos:
+            inferred = ModelCapabilities.from_name(info.name)
+            caps = ModelCapabilities(
+                vision=inferred.vision or "vision" in info.capabilities,
+                embedding=inferred.embedding or "embedding" in info.capabilities or "embedContent" in info.capabilities,
+                context_length=info.context_window or inferred.context_length,
+                family=inferred.family,
+                source=f"{provider_name}:models",
+                reasoning="reasoning" in info.capabilities,
+                tool_calling=provider.capabilities().tool_calling,
+                streaming=provider.capabilities().streaming,
+                structured_output=provider.capabilities().structured_output,
+            )
+            model = RegisteredModel(provider_name, info.name, info.name, location, caps)
+            self.register(model)
+            result.append(model)
+        return result
+
+    def refresh_providers(self, providers: Mapping[str, LLMProvider]) -> list[RegisteredModel]:
+        self._models.clear()
+        for name, provider in providers.items():
+            self.register_provider_models(name, provider)
+        return self.all_models()
+
+    def all_models(self) -> list[RegisteredModel]:
+        return list(self._models.values())
+
+    def candidates(
+        self,
+        *,
+        capability: str | None = None,
+        location: ModelLocation | None = None,
+        provider: str | None = None,
+    ) -> list[RegisteredModel]:
+        rows = self.all_models()
+        if location is not None:
+            rows = [row for row in rows if row.location == location]
+        if provider:
+            rows = [row for row in rows if row.provider == provider]
+        if capability:
+            rows = [row for row in rows if bool(getattr(row.capabilities, capability, False))]
+        return [row for row in rows if row.available]
 
     def refresh(
         self,
@@ -141,9 +231,8 @@ class ModelRegistry:
 
         show_info = getattr(provider, "show_info", None)
         for name in names:
-            if name in self._info and name in self._stamp and not force:
-                if now - self._stamp[name] < self._TTL_S:
-                    continue
+            if name in self._info and name in self._stamp and not force and now - self._stamp[name] < self._TTL_S:
+                continue
             if show_info is not None:
                 try:
                     details = show_info(name)
@@ -204,6 +293,6 @@ def build_model_registry(provider) -> ModelRegistry:
     registry = ModelRegistry()
     try:
         registry.refresh(provider)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - discovery is best-effort while Ollama starts
+        return registry
     return registry

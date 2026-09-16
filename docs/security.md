@@ -187,6 +187,18 @@ Reglas:
 - Secretos (tokens/keys) nunca en Git; se configuran por env (`NOVA_*`) o archivos ignorados
   (`.env`, `config/local.yaml`).
 
+### Frontera cloud
+
+- `model_router.never_send_data_to_cloud` bloquea todos los proveedores cloud con precedencia absoluta.
+- `never_send_sensitive_data_to_cloud` mantiene local una tarea con patrones de secretos o rutas locales.
+- `redact_cloud_requests` aplica redacción heurística justo antes de la petición; no promete anonimización.
+- Las API keys se resuelven desde variables de entorno o `SecretStore`/keyring del sistema operativo;
+  los endpoints y respuestas de estado nunca devuelven el secreto.
+- El fallback cloud solo existe si está habilitado, la privacidad lo permite y hay un candidato explícito.
+  Después de emitir un delta de streaming nunca se reintenta en otro proveedor.
+- El audit de inferencia contiene tipo de tarea, proveedor, modelo, ubicación, razón, fallback, duración y
+  usage disponible; no contiene prompt ni respuesta.
+
 ## Modo HYBRID y privacidad (PHASE 14, ADR-020)
 
 El modo HYBRID es **opt-in y nunca rompe la privacidad por defecto**:

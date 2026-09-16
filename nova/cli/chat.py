@@ -5,18 +5,21 @@ import sys
 
 from nova.agents import Agent, agent_presets, create_agent
 from nova.automation import AutomationExecutor, Scheduler
+from nova.cli import ui
 from nova.core.audit import AuditLog
-from nova.core.config import AIMode, PrivacyPolicy, load_settings
+from nova.core.config import load_settings
 from nova.core.health import check_ollama, check_opencode, gather_system_info
 from nova.core.logging import get_logger, setup_logging
 from nova.core.session import ChatSession
 from nova.llm.base import ChatCompletionRequest, ChatMessage, NOVAProviderError
-from nova.llm.registry import create_provider
-from nova.llm.router import RoutingDecision, build_router
+from nova.llm.orchestrator import InferenceOrchestrator
+from nova.llm.registry import create_provider, create_providers
+from nova.llm.router import build_router
 from nova.memory import MemorySearchTool, MemoryService, MemoryStore, RememberTool
 from nova.memory.retriever import MemoryHit
 from nova.plugins import load_plugin_tools
-from nova.tools import ToolResult, registry as tool_registry
+from nova.tools import ToolResult
+from nova.tools import registry as tool_registry
 from nova.tools.host import all_host_tools
 from nova.tools.host.paths import PathBounds
 from nova.tools.permissions import PermissionSystem
@@ -24,10 +27,7 @@ from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
 from nova.tools.standard import bounded_list_dir
 from nova.tools.web import all_web_tools
-from nova.voice import VoiceSession, build_voice
-
-from nova.cli import ui
-
+from nova.voice import build_voice
 
 HELP_TEXT = """\
   /exit             quit (also Ctrl+C or Ctrl+Z)
@@ -126,15 +126,7 @@ def main(argv: list[str] | None = None) -> int:
 
     provider = create_provider(settings.llm)
 
-    cloud_provider = None
-    if settings.ai.mode == AIMode.hybrid and settings.open_code.enabled:
-        from nova.llm.opencode import OpenCodeProvider
-        cloud_provider = OpenCodeProvider(settings=settings.open_code)
-        if cloud_provider.health():
-            logger.info("opencode cloud provider: connected")
-        else:
-            logger.info("opencode cloud provider: not reachable (local-only fallback)")
-            cloud_provider = None
+    providers = create_providers(settings, local_provider=provider)
 
     installed_models: list[str] = []
     try:
@@ -148,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         ai_mode=settings.ai.mode,
         ai_privacy=settings.ai.privacy,
         open_code=settings.open_code,
+        openai=settings.openai,
+        gemini=settings.gemini,
+        compatible=settings.openai_compatible,
     )
 
     validation_warnings = router.validate_against(installed_models)
@@ -210,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
         confirm=lambda question: input(question).strip().lower() in ("y", "yes", "s", "si"),
     )
     audit = AuditLog(settings.audit.file)
+    inference = InferenceOrchestrator(
+        providers, local_provider=settings.llm.provider, audit=audit
+    )
 
     agents: dict[str, Agent] = {}
 
@@ -282,9 +280,6 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("user: %s", text)
         try:
             decision = router.route_for(text)
-            active_provider = provider
-            if decision.provider == "opencode" and cloud_provider is not None:
-                active_provider = cloud_provider
             request = session.build_request(model=decision.model)
             context = memory.context(text)
             if context:
@@ -303,29 +298,19 @@ def main(argv: list[str] | None = None) -> int:
                 spinner_msg = "Processing request..."
 
             with ui.ThinkingIndicator(spinner_msg):
-                response = active_provider.chat(request)
+                cloud_confirmed = True
+                if decision.confirmation_required:
+                    cloud_confirmed = input(
+                        f"Send this turn to {decision.provider} cloud? [y/N] "
+                    ).strip().lower() in ("y", "yes", "s", "si")
+                response = inference.chat(
+                    request, decision, cloud_confirmed=cloud_confirmed
+                )
 
         except NOVAProviderError as exc:
-            if active_provider is not provider:
-                logger.warning("cloud provider failed (%s); falling back to local", exc)
-                try:
-                    with ui.ThinkingIndicator("Falling back to local..."):
-                        response = provider.chat(request)
-                    decision = RoutingDecision(
-                        task_kind=decision.task_kind,
-                        model=request.model,
-                        role=decision.role,
-                        reason=f"cloud failed ({exc}); fell back to local ({request.model})",
-                        provider="ollama",
-                    )
-                except NOVAProviderError as local_exc:
-                    logger.warning("local fallback failed: %s", local_exc)
-                    _handle_chat_error(local_exc, decision.model, installed_models)
-                    return None
-            else:
-                logger.warning("nova error: %s", exc)
-                _handle_chat_error(exc, decision.model, installed_models)
-                return None
+            logger.warning("nova error: %s", exc)
+            _handle_chat_error(exc, decision.model, installed_models)
+            return None
 
         answer = response.message.content
         session.add_assistant(answer)
@@ -612,9 +597,8 @@ def main(argv: list[str] | None = None) -> int:
             chat_line(line)
     finally:
         scheduler.stop()
-        provider.close()
-        if cloud_provider is not None:
-            cloud_provider.close()
+        for managed in {id(item): item for item in providers.values()}.values():
+            managed.close()
         memory.close()
         if voice is not None:
             voice.close()

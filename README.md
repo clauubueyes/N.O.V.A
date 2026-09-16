@@ -29,13 +29,17 @@ Todo corre en tu PC. La IA propone, N.O.V.A. decide y ejecuta bajo tu supervisi�
 
 Si solo quieres usar N.O.V.A. sin tocar código:
 
-1. **Descarga** la última versión (**N.O.V.A. 0.17.1**): [`NOVA-Setup.exe`](https://github.com/clauubueyes/N.O.V.A/releases/latest) (~400 MB) desde GitHub Releases
-    - SHA256: `038bf26b51d8537ac2939901298e5df8b1d5bad7eff5ba30256d7410fdc91589`
+1. **Descarga** la última versión (**N.O.V.A. 0.18.0**): [`NOVA-Setup.exe`](https://github.com/clauubueyes/N.O.V.A/releases/latest) (~400 MB) desde GitHub Releases
+    - SHA256: `8cce41da6e3233737f7d8004408b6859cd6f635d757476a55c5ad2d63c64a0ed`
 2. **Ejecútalo** — no necesita Python ni nada instalado
 3. El instalador comprueba tu hardware, elige el mejor modelo para tu PC, y lo prepara automáticamente
 4. En unos minutos tienes N.O.V.A. lista
 
 Para quitarla: ejecuta `NOVA-Uninstall.exe` (está en la carpeta de instalación).
+
+Para actualizar desde una versión anterior, cierra N.O.V.A. y ejecuta el nuevo
+`NOVA-Setup.exe` sobre la misma ubicación. El reemplazo es verificado y conserva
+configuración, conversaciones y modelos; no hace falta desinstalar primero.
 
 > **Requisitos:** Windows 10 22H2+ (64 bits), 4+ GB de RAM, conexión a Internet solo la primera vez (para descargar el modelo).
 
@@ -134,7 +138,9 @@ El instalador automático detecta tu hardware y elige el mejor modelo.
 
 ## Modelos disponibles
 
-N.O.V.A. usa **Ollama** para ejecutar modelos locales. Puedes cambiar de modelo desde Ajustes o desde el chat:
+N.O.V.A. usa **Ollama** por defecto y funciona completamente offline. Opcionalmente puede usar
+OpenAI, Gemini, OpenCode o endpoints OpenAI-compatible mediante el router local-first; el usuario
+controla privacidad, confirmación, fallback y redacción desde Ajustes. Puedes cambiar de modelo desde Ajustes o desde el chat:
 
 ```text
 /route escribe una función en python   # ver qué modelo se elige
@@ -149,7 +155,7 @@ N.O.V.A. usa **Ollama** para ejecutar modelos locales. Puedes cambiar de modelo 
 config/config.yaml    Configuración (modelos, permisos, API, router)
 nova/
   core/              Config, logging, contexto, auditoría
-  llm/               Proveedor LLM (Ollama) + Model Router
+  llm/               Proveedores local/cloud + Model Registry/Router/Orchestrator
   tools/             Herramientas + Permission System
   agents/            5 agentes paramétricos (general, coding, research, system, automation)
   memory/            Memoria persistente SQLite + embeddings

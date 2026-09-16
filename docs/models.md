@@ -1,5 +1,18 @@
 # Modelos
 
+## Proveedores y registro central
+
+El catálogo ya no representa solo roles de Ollama. `ModelRegistry` identifica cada modelo por
+`provider:model`, ubicación local/cloud, ventana de contexto, reasoning, tools, visión, streaming,
+latencia, recursos, disponibilidad y coste opcional. Las capacidades desconocidas permanecen
+desconocidas; no se inventan. Proveedores soportados: `ollama`, `openai`, `gemini`, `opencode` y
+endpoints personalizados compatibles con OpenAI.
+
+El router ofrece perfiles `local`, `balanced`, `performance` y `custom`. `local` nunca hace fallback
+cloud; `balanced` prefiere local suficiente; `performance` puede preferir cloud para tareas pesadas;
+`custom` respeta las preferencias explícitas. `never_send_data_to_cloud` tiene precedencia absoluta.
+Las tareas sensibles detectadas heurísticamente se mantienen locales por defecto.
+
 ## Política
 
 **Local-first, gratuito y privado (ADR-013).** La inferencia corre en el dispositivo del usuario
@@ -79,20 +92,20 @@ Clasificación de tareas: `simple`, `coding`, `vision`, `heavy` y `general` (reg
 | "haz un analisis complejo" (RAM baja, HIBRID) | heavy | local | opencode | `openai/gpt-4o` (fallback cloud) |
 | "cuéntame una historia" | general | local | ollama | `llama3.1:8b` |
 
-## Cloud fallback (MODO HYBRID, PHASE 14)
+## Cloud routing y fallback (HYBRID multiproveedor)
 
-Cuando `ai.mode: hybrid` y `ai.privacy: cloud_allowed`, las tareas **`heavy`** con recursos locales
-insuficientes pueden ruteo a **OpenCode** (`providers.opencode`). Reglas:
+Cuando `ai.mode: hybrid` y la privacidad lo permite, las tareas pesadas, de reasoning o long-context
+pueden usar cualquiera de los proveedores cloud configurados. Reglas:
 
 - **Local-first**: nunca se elige cloud si el modelo local basta (ADR-013/ADR-020).
 - **Privacy**: con `local_only` (defecto) NO existe fallback cloud, aunque haya `open_code.models`.
-- **Solo tareas pesadas**: `simple`/`general` jamás salen del dispositivo.
-- **Catálogo cloud en config** (`open_code.models` por rol `local`/`reasoning`/`coding`/`vision`) y
-  `open_code.default_model` como modelo genérico. Se prefiere el rol `local`/`reasoning` para heavy.
+- **Tareas rápidas/voz**: favorecen el modelo pequeño de menor latencia y respetan siempre privacidad.
+- **Catálogo cloud central**: modelos OpenAI, Gemini, OpenCode y compatibles participan con sus
+  capacidades y preferencias; no existen excepciones por modelo como Big Pickle.
 - **ModelInfo con coste desconocido**: no se hardcodean listas de modelos "gratuitos"; si no hay
   forma fiable de saber el coste, se reporta `unknown`.
-- **Fallback bidireccional**: si el proveedor cloud falla (auth, rate limit, timeout, red, modelo no
-  disponible), el CLI/API reintentan con el modelo local. Todo se registra en el log.
+- **Fallback controlado**: cloud→local es seguro; local→cloud requiere estar habilitado, un candidato
+  compatible y cumplir privacidad/confirmación. Un stream que ya emitió contenido no se repite.
 
 La memoria sigue siempre local (SQLite + embeddings Ollama); N.O.V.A. nunca sube sus base de datos
 de memoria a un proveedor cloud.

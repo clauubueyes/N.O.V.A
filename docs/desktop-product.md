@@ -79,6 +79,11 @@ futura debe usar un manifiesto HTTPS, versión/arquitectura, hash y firma del ed
 temporal, verificación, sustitución con rollback y conservación de datos. No se ejecutará
 automáticamente un binario obtenido de un enlace arbitrario.
 
+Mientras no exista ese descargador integrado, `NOVA-Setup.exe` funciona como actualizador in-place:
+se ejecuta sobre la ubicación registrada, verifica el payload, prepara los binarios en staging,
+sustituye la instalación con rollback y mantiene los datos de usuario fuera del bundle. Las versiones
+0.17.x necesitan descargar y ejecutar manualmente el instalador una vez; no es necesario desinstalar.
+
 Referencias de empaquetado: [Qt y PyInstaller](https://doc.qt.io/qtforpython-6/deployment/deployment-pyinstaller.html),
 [recursos congelados](https://pyinstaller.org/en/stable/runtime-information.html),
 [Ollama en Windows](https://docs.ollama.com/windows).

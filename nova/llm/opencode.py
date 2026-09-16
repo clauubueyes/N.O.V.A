@@ -12,7 +12,6 @@ OpenCode while keeping the implementation dependency-free (httpx only).
 OpenCode server API docs: https://opencode.ai/docs/server/
 """
 
-import uuid
 
 import httpx
 
@@ -38,6 +37,8 @@ class OpenCodeProvider(LLMProvider):
     """
 
     supports_embedding = False  # OpenCode does not expose an embedding endpoint.
+    provider_name = "opencode"
+    location = "cloud"
 
     def __init__(
         self,
@@ -140,13 +141,14 @@ class OpenCodeProvider(LLMProvider):
                 message=ChatMessage(role="assistant", content=answer_text),
                 model=model_str,
                 usage=None,
+                provider="opencode",
             )
         finally:
             # 4) Best-effort session cleanup
             try:
                 self._client.delete(f"/session/{session_id}")
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - cleanup must not mask the response
+                logger.debug("Could not delete temporary OpenCode session %s", session_id, exc_info=True)
 
     def list_models(self) -> list[ModelInfo]:
         """List models from all connected OpenCode providers."""
@@ -156,7 +158,6 @@ class OpenCodeProvider(LLMProvider):
             return []
 
         providers = data.get("providers", [])
-        defaults = data.get("default", {})
         models: list[ModelInfo] = []
         for provider in providers:
             provider_id = provider.get("id", "")
