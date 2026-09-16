@@ -731,6 +731,36 @@ main {
 .copy:hover { color: var(--accent); background: var(--accent-soft); }
 @media (hover: none) { .copy { opacity: 1; } }
 
+/* Voz: leer respuesta */
+.speak {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  margin-right: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 11.5px;
+  font-weight: 540;
+  color: var(--muted);
+  background: transparent;
+  opacity: 0;
+  transition: opacity var(--speed-fast), background var(--speed-fast), color var(--speed-fast);
+}
+.speak::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5Z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5Z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.message.assistant:hover .speak, .message.assistant:focus-within .speak { opacity: 1; }
+.speak:hover { color: var(--accent); background: var(--accent-soft); }
+.speak[data-voice="playing"] { opacity: 1; color: var(--accent); background: var(--accent-soft); animation: pulse-fade 1.4s ease-in-out infinite; }
+@media (hover: none) { .speak { opacity: 1; } }
+
 /* Estado de generación */
 .thinking {
   max-width: var(--content-w);
@@ -882,6 +912,8 @@ main {
 }
 .icon .ic { width: 18px; height: 18px; }
 .icon:hover { background: var(--surface-hover); color: var(--text); }
+#microphone.recording { color: var(--danger); background: var(--danger-soft); animation: pulse-fade 1.2s ease-in-out infinite; }
+#microphone.recording .ic { filter: drop-shadow(0 0 4px var(--danger)); }
 .icon:active { transform: scale(.95); }
 
 .composer-toolbar select {

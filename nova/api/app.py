@@ -32,6 +32,7 @@ from nova.api.schemas import (
     SessionRunRequest,
     ToolInfoOut,
 )
+from nova.api.voice import build_voice_router
 from nova.automation import AutomationExecutor, Scheduler
 from nova.core.audit import AuditLog
 from nova.core.config import AIMode, NovaSettings, PrivacyPolicy, load_settings
@@ -117,6 +118,9 @@ class AppState:
     default_model: str = ""
     models_cache: dict[str, Any] = field(default_factory=dict)
     models_ttl_s: float = 2.0
+    voice_stt: Any = None
+    voice_tts: Any = None
+    speech_cache: dict[str, bytes] = field(default_factory=dict)
 
 
 def _tool_infos(settings: NovaSettings) -> list[ToolInfoOut]:
@@ -952,6 +956,7 @@ def create_app(
     from nova.api.product import build_product_router
 
     app.include_router(build_product_router(state, config_path=config_path, desktop=desktop))
+    app.include_router(build_voice_router(state))
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
     # Serve the web assets (style.css, app.js, ...) at the root too, so the UI
     # works with relative paths both locally and on static hosting. API routes

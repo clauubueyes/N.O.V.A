@@ -51,6 +51,7 @@ class PiperTTS(TTSProvider):
         self._voice_dir = Path(voice_dir).expanduser() if voice_dir else default_voices_dir()
         self._auto_download = auto_download
         self._lock = threading.Lock()
+        self._engine = None  # lazy PiperVoice, reused across calls
 
     def available(self) -> bool:
         return self.availability()[0]
@@ -101,6 +102,36 @@ class PiperTTS(TTSProvider):
         return files[0], files[1]
 
     def speak(self, text: str) -> None:
+        """Synthesize and play `text` through the system output device."""
+        fd, name = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        path = Path(name)
+        try:
+            self._synthesize_to_path(text, path)
+            self._play_wav(path)
+        except VoiceError:
+            raise
+        except Exception as exc:
+            raise VoiceError(f"piper synthesis failed: {exc}") from exc
+        finally:
+            path.unlink(missing_ok=True)
+
+    def synthesize(self, text: str) -> bytes:
+        """Return the WAV bytes for `text` without playing them (web voices)."""
+        fd, name = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        path = Path(name)
+        try:
+            self._synthesize_to_path(text, path)
+            return path.read_bytes()
+        except VoiceError:
+            raise
+        except Exception as exc:
+            raise VoiceError(f"piper synthesis failed: {exc}") from exc
+        finally:
+            path.unlink(missing_ok=True)
+
+    def _synthesize_to_path(self, text: str, path: Path) -> None:
         ok, reason = self.availability()
         if not ok:
             raise VoiceError(f"TTS not available (piper): {reason}")
@@ -115,19 +146,10 @@ class PiperTTS(TTSProvider):
                 from piper import PiperVoice
             except ImportError as exc:
                 raise VoiceError("piper-tts no está instalado (pip install piper-tts)") from exc
-            fd, name = tempfile.mkstemp(suffix=".wav")
-            os.close(fd)
-            path = Path(name)
-            try:
-                with wave.open(str(path), "wb") as wav:
-                    PiperVoice.load(str(model_path), str(config_path)).synthesize_wav(text, wav)
-                self._play_wav(path)
-            except VoiceError:
-                raise
-            except Exception as exc:
-                raise VoiceError(f"piper synthesis failed: {exc}") from exc
-            finally:
-                path.unlink(missing_ok=True)
+            if self._engine is None:
+                self._engine = PiperVoice.load(str(model_path), str(config_path))
+            with wave.open(str(path), "wb") as wav:
+                self._engine.synthesize_wav(text, wav)
 
     def _play_wav(self, path: Path) -> None:
         if os.name == "nt":
