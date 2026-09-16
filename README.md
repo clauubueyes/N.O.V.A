@@ -2,7 +2,7 @@
 
 **N.O.V.A. = Neural Operations & Virtual Assistant**
 
-![Versión](https://img.shields.io/badge/versi%C3%B3n-0.17.0-1e88e5)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-0.17.1-1e88e5)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-4caf50)
 
 Tu asistente personal de IA. **Privado. Local. Tuyo.**
@@ -29,8 +29,8 @@ Todo corre en tu PC. La IA propone, N.O.V.A. decide y ejecuta bajo tu supervisi�
 
 Si solo quieres usar N.O.V.A. sin tocar código:
 
-1. **Descarga** la última versión (**N.O.V.A. 0.17.0**): [`NOVA-Setup.exe`](https://github.com/clauubueyes/N.O.V.A/releases/latest) (~400 MB) desde GitHub Releases
-    - SHA256: `d2ac93cbe96717f5e118f1dabee577620411955503b8046018ace191565fc9f3`
+1. **Descarga** la última versión (**N.O.V.A. 0.17.1**): [`NOVA-Setup.exe`](https://github.com/clauubueyes/N.O.V.A/releases/latest) (~400 MB) desde GitHub Releases
+    - SHA256: `038bf26b51d8537ac2939901298e5df8b1d5bad7eff5ba30256d7410fdc91589`
 2. **Ejecútalo** — no necesita Python ni nada instalado
 3. El instalador comprueba tu hardware, elige el mejor modelo para tu PC, y lo prepara automáticamente
 4. En unos minutos tienes N.O.V.A. lista
