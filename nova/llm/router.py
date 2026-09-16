@@ -23,6 +23,7 @@ from nova.core.config import (
     OpenCodeProviderSettings,
     PrivacyPolicy,
 )
+from nova.llm.model_registry import ModelRegistry
 from nova.llm.resources import ResourceManager, SystemResources
 
 # Roles the router understands (keys of the `llm.models` catalog).
@@ -78,12 +79,14 @@ class ModelRouter:
         ai_privacy: PrivacyPolicy = PrivacyPolicy.local_only,
         cloud_catalog: dict[str, str] | None = None,
         cloud_default_model: str = "",
+        model_registry: ModelRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._catalog = dict(catalog)
         self._default = default_model
         self._embedding = embedding_model
         self._resources = resources or ResourceManager()
+        self._registry = model_registry or ModelRegistry()
         # PHASE 14 — hybrid mode fields
         self._ai_mode = ai_mode
         self._ai_privacy = ai_privacy
@@ -150,6 +153,10 @@ class ModelRouter:
     def ai_privacy(self) -> PrivacyPolicy:
         return self._ai_privacy
 
+    @property
+    def model_registry(self) -> ModelRegistry:
+        return self._registry
+
     def _get(self, role: str, fallback: str) -> str:
         return self._catalog.get(role) or fallback
 
@@ -212,8 +219,42 @@ class ModelRouter:
             return "heavy"
         return "general"
 
-    def route_for(self, text: str) -> RoutingDecision:
+    def model_for_capability(self, capability: str) -> str | None:
+        """Best model for a required capability.
+
+        Preference: configured catalog role -> registry-discovered model -> None.
+        """
+        role = {"vision": _VISION, "embedding": _EMBEDDING}.get(capability, capability)
+        if role in self._catalog:
+            return self._catalog[role]
+        found = self._registry.first_matching(capability)
+        if found:
+            return found
+        return None
+
+    def route_for(self, text: str, *, require: str | None = None) -> RoutingDecision:
         kind = self.classify(text)
+
+        if require == "vision":
+            # The message actually carries images: the text is not enough to
+            # decide; the model MUST be able to see. Fall back to small/general
+            # text only when no vision model exists (with a diagnostic reason).
+            model = self.model_for_capability("vision")
+            if model:
+                return RoutingDecision(
+                    task_kind="vision",
+                    model=model,
+                    role=_VISION,
+                    reason="message has image attachments; vision model required",
+                    provider="ollama",
+                )
+            return RoutingDecision(
+                task_kind="vision",
+                model=self._default,
+                role=_LOCAL,
+                reason="no vision model installed; routing to text default",
+                provider="ollama",
+            )
 
         if kind == "simple":
             return RoutingDecision(
@@ -308,6 +349,7 @@ def build_router(
     ai_mode: AIMode = AIMode.local,
     ai_privacy: PrivacyPolicy = PrivacyPolicy.local_only,
     open_code: OpenCodeProviderSettings | None = None,
+    model_registry: ModelRegistry | None = None,
 ) -> ModelRouter:
     cloud_catalog = None
     cloud_default = ""
@@ -324,4 +366,5 @@ def build_router(
         ai_privacy=ai_privacy,
         cloud_catalog=cloud_catalog,
         cloud_default_model=cloud_default,
+        model_registry=model_registry,
     )

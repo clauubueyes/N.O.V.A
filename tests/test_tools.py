@@ -171,3 +171,27 @@ class TestRunner:
         lines = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
         assert lines[0]["decision"] == "error"
         assert lines[0]["ok"] is False
+
+    def test_audit_recent_returns_tail_oldest_first(self, tmp_path) -> None:
+        audit_path = tmp_path / "audit.jsonl"
+        audit = AuditLog(str(audit_path))
+        runner = _runner(_registry(), _permissions(autonomy=AutonomyLevel.full), audit=audit)
+        for _ in range(5):
+            runner.run("date_time")
+        entries = audit.recent(limit=3)
+        first_ts = audit.recent(limit=100)[0]["ts"]
+        assert entries == audit.recent(limit=3)
+        assert len(entries) == 3
+        # Oldest first within the returned tail.
+        assert [e["tool"] for e in entries][-1] == "date_time"
+        assert all(e["ts"] >= first_ts for e in entries)
+
+    def test_audit_recent_missing_file_returns_empty(self, tmp_path) -> None:
+        audit = AuditLog(str(tmp_path / "never.jsonl"))
+        assert audit.recent() == []
+
+    def test_audit_recent_skips_corrupt_lines(self, tmp_path) -> None:
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("{not-json}\n", encoding="utf-8")
+        audit = AuditLog(str(audit_path))
+        assert audit.recent(limit=5) == []

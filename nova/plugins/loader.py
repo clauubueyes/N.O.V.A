@@ -19,12 +19,21 @@ _BUILTIN_PLUGINS: dict[str, type[Plugin]] = {
     "units": UnitsPlugin,
 }
 
+# External plugins import arbitrary code into the process, so they must be
+# imported ONCE per path and never re-executed behind the scenes (a module
+# import can have side effects). Subsequent loads reuse these instances.
+_EXTERNAL_PLUGIN_CACHE: dict[str, Plugin] = {}
+
 
 class PluginLoadError(Exception):
     """Raised when a plugin cannot be loaded (import or contract violation)."""
 
 
 def _load_external_plugin(path: Path) -> Plugin:
+    resolved = str(Path(path).resolve())
+    cached = _EXTERNAL_PLUGIN_CACHE.get(resolved)
+    if cached is not None:
+        return cached
     try:
         module_name = f"nova_plugin_{path.stem}"
         spec = importlib.util.spec_from_file_location(module_name, path)
@@ -40,6 +49,7 @@ def _load_external_plugin(path: Path) -> Plugin:
         raise PluginLoadError(
             f"plugin {path} must expose a `PLUGIN` object (a nova.plugins.Plugin instance)"
         )
+    _EXTERNAL_PLUGIN_CACHE[resolved] = plugin_obj
     return plugin_obj
 
 
@@ -98,6 +108,14 @@ def load_plugin_tools(
         for tool in tools:
             if not isinstance(tool, BaseTool):
                 logger.warning("plugin %r returned a non-tool %r; skipped", name, tool)
+                continue
+            if tool.name in registry.names():
+                logger.warning(
+                    "plugin %r defines tool %r which is already registered; "
+                    "skipped to avoid shadowing the system tool",
+                    name,
+                    tool.name,
+                )
                 continue
             registry.register(tool)
             tool_names.append(tool.name)

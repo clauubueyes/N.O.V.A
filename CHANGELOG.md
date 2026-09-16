@@ -2,6 +2,40 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.17.0] - 2026-09-16
+
+### Añadido — Fase 5: reingeniería (seguridad, hardware, visión, RAG, streaming, UX)
+
+- **Seguridad (5.1)**: `api.host` por defecto `127.0.0.1`; guarda de bind no-loopback sin token en el
+  servidor; CORS con matching estricto de origen (defensa CSRF/DNS-rebinding, el túnel salta el check);
+  SSRF guard en `WebClient` (bloquea loopback/privadas/link-local/multicast/reservadas y sufijos
+  `.local`/`.internal`, sin resolución DNS); `ListDirTool` acotado a `host.roots`; scrub de contenido
+  sensible en los argumentos del audit (`write_file`, `read_file`, `remember`, etc.); los plugins
+  externos no pueden hacer shadowing de tools registradas y se cachean por path.
+- **Hardware real + Model Registry (5.2)**: RAM y CPU reales de Windows (`GlobalMemoryStatusEx` /
+  `GetSystemTimes`); nuevo `nova/llm/model_registry.py` con capacidades de modelos (visión, embedding,
+  contexto, familia, tamaño, cuantización) refrescadas vía `/api/show` (TTL 1 h) y rutas por
+  capacidad (`route_for(..., require="vision")`); `OllamaProvider.show_info`.
+- **Visión + español (5.3)**: los turnos con imágenes eligen el modelo de visión por el catálogo
+  (rol `vision`) y fallan con `400` si el proveedor no soporta imágenes; system prompt en español con
+  la regla de responder en el idioma del último mensaje.
+- **RAG (5.4)**: nuevo paquete `nova/rag` — splitter recursivo (párrafos/frases, 1500 chars, overlap
+  150), `RagStore` SQLite con FTS5 (+fallback LIKE) y embeddings, y `RagService` híbrido
+  FTS+coseno con fusión RRF. Los adjuntos grandes (≥ 12 000 caracteres) se indexan en
+  `<memoria>.rag.db` y solo los fragmentos relevantes se inyectan al contexto; `MAX_TEXT` sube a 200 000.
+- **Streaming SSE + cancelación (5.5)**: `LLMProvider.stream` (para `OllamaProvider` real, con
+  `StreamCancellation`), `ChatRequest.stream`/`SessionChatRequest.stream`, respuestas `text/event-stream`
+  en `POST /v1/chat` y `POST /v1/sessions/{id}/chat`, y `POST /v1/sessions/{id}/stop` para cancelar. El
+  estado solo se registra al completar; ante error/desconexión se restaura el historial.
+- **UX y observabilidad (5.6)**: comandos `/` en la web (`/help`, `/new`, `/clear`, `/tools`,
+  `/status`, `/models`, `/route`, `/audit`, `/model`) con autocompletado y navegación por teclado;
+  `/audit [n]` en el CLI; `GET /v1/audit` y `/healthz` extendido (uptime, sesiones, modelo, RAG,
+  streams). `AuditLog.recent()` lee cola del JSONL tolerando líneas rotas.
+- **Persistencia verificada (5.7)**: las sesiones sobreviven al reinicio (historial, modelo y modo
+  local) y el borrado elimina su persistencia — cubierto con tests de roundtrip.
+- **Rendimiento (5.8)**: cache corto (TTL configurable en `create_app`, 2 s) en `GET /v1/models`
+  para no golpear a Ollama en cada polling.
+
 ## [0.16.0] - 2026-09-14
 
 ### Añadido — PHASE 15: Desktop Product + Acceso compartido

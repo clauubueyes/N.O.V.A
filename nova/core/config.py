@@ -104,8 +104,15 @@ class LoggingSettings(BaseSettings):
 class SessionSettings(BaseSettings):
     max_history_messages: int = 20
     system_prompt: str = (
-        "You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal "
-        "AI assistant running locally. Be concise, precise and helpful."
+        "Eres N.O.V.A. (Neural Operations & Virtual Assistant), tu asistente "
+        "personal de IA que se ejecuta 100 % local. Sé conciso, preciso y útil.\n"
+        "\n"
+        "Reglas de idioma:\n"
+        "- Responde SIEMPRE en el mismo idioma que el último mensaje del usuario\n"
+        "  (o el idioma de la conversación), aunque me describas el contenido de\n"
+        "  una imagen, un archivo o una búsqueda web.\n"
+        "- Si el usuario escribe en español, responde en español. Si cambia de\n"
+        "  idioma a mitad de la conversación, síguele el cambio."
     )
 
 
@@ -121,6 +128,22 @@ class DesktopSettings(BaseSettings):
     onboarding_complete: bool = False
     mode: Literal['private', 'balanced', 'advanced'] = 'private'
     prepared: bool = False
+
+
+class RagSettings(BaseSettings):
+    """PHASE 5.4 — local RAG pipeline for big attachments/documents.
+
+    Documents larger than `index_above_chars` are chunked and indexed (FTS5 +
+    optional embeddings) instead of being dumped whole into the prompt; each chat
+    turn retrieves the top `top_k` chunks for the query. Smaller texts are still
+    pasted inline.
+    """
+
+    enabled: bool = True
+    top_k: int = 3
+    chunk_chars: int = 1500
+    overlap_chars: int = 150
+    index_above_chars: int = 12000
 
 
 class AuditSettings(BaseSettings):
@@ -354,6 +377,7 @@ class NovaSettings(BaseSettings):
     ai: AISettings = AISettings()
     open_code: OpenCodeProviderSettings = OpenCodeProviderSettings()
     desktop: DesktopSettings = DesktopSettings()
+    rag: RagSettings = RagSettings()
 
 
 _ENV_OVERRIDES: dict[str, dict[str, str]] = {

@@ -8,7 +8,10 @@ import zipfile
 from pathlib import Path
 
 MAX_BYTES = 8 * 1024 * 1024
-MAX_TEXT = 40000
+# Text extraction cap per attachment. The full text is only pasted inline when it
+# is small enough (see rag.index_above_chars); larger documents are chunk-indexed
+# and answered from retrieved fragments, so a generous cap here is safe.
+MAX_TEXT = 200000
 TEXT_TYPES = {'.txt', '.md', '.py', '.js', '.ts', '.tsx', '.jsx', '.json', '.yaml', '.yml',
               '.csv', '.html', '.css', '.xml', '.sql', '.log', '.toml', '.ini', '.java', '.c', '.cpp', '.h', '.rs', '.go'}
 

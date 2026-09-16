@@ -18,9 +18,11 @@ from nova.memory.retriever import MemoryHit
 from nova.plugins import load_plugin_tools
 from nova.tools import ToolResult, registry as tool_registry
 from nova.tools.host import all_host_tools
+from nova.tools.host.paths import PathBounds
 from nova.tools.permissions import PermissionSystem
 from nova.tools.registry import create_registry
 from nova.tools.runner import ToolRunner
+from nova.tools.standard import bounded_list_dir
 from nova.tools.web import all_web_tools
 from nova.voice import VoiceSession, build_voice
 
@@ -35,6 +37,7 @@ HELP_TEXT = """\
   /route <text>     show which model the router would pick
   /catalog          list the configured model catalog
   /tools            list registered tools
+  /audit [n]        show recent tool activity from the audit log
   /plugins          list loaded plugins and their tools
   /run <tool> <json> run a tool
   /voice            start the voice loop (STT -> chat -> TTS)
@@ -198,12 +201,15 @@ def main(argv: list[str] | None = None) -> int:
 
     tools_registry = create_registry(memory_tools + host_tools + web_tools, base=tool_registry)
     plugin_infos = load_plugin_tools(settings.plugins, registry=tools_registry)
+    if settings.host.roots:
+        tools_registry.register(bounded_list_dir(PathBounds(settings.host.roots)))
     tools_runner = ToolRunner(
         registry=tools_registry,
         permissions=PermissionSystem(settings.permissions),
         audit=AuditLog(settings.audit.file),
         confirm=lambda question: input(question).strip().lower() in ("y", "yes", "s", "si"),
     )
+    audit = AuditLog(settings.audit.file)
 
     agents: dict[str, Agent] = {}
 
@@ -407,6 +413,25 @@ def main(argv: list[str] | None = None) -> int:
                     ui.print_command_header("Registered Tools")
                     for tool in tools_registry.all():
                         ui.print_info(f"  {tool.name:<14} {tool.description}")
+                elif command == "audit":
+                    try:
+                        n = int(parts[1]) if len(parts) >= 2 else 10
+                    except ValueError:
+                        ui.print_warning("Usage: /audit [n]")
+                        continue
+                    n = max(1, min(n, 200))
+                    entries = audit.recent(n)
+                    if not entries:
+                        ui.print_info("No tool activity recorded yet.")
+                        continue
+                    ui.print_command_header(f"Recent activity (last {len(entries)})")
+                    for e in entries:
+                        status = "\u2713" if e.get("ok") else "\u2717"
+                        ts = str(e.get("ts", ""))[:19]
+                        ui.print_info(
+                            f"  {ts:<20} {status} {e.get('tool', ''):<14} "
+                            f"{e.get('action', 'run'):<6} -> {e.get('decision', '')}"
+                        )
                 elif command == "plugins":
                     if not plugin_infos:
                         ui.print_warning("No plugins loaded. Enable in config.yaml -> plugins.")

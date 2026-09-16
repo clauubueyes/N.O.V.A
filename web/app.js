@@ -139,9 +139,102 @@ async function health() {
   $("connection-status").textContent = status.paused ? "N.O.V.A. en pausa" : response.status === "ok" ? "En tu ordenador" : "Motor pendiente de preparar";
   return status;
 }
+const SLASH_COMMANDS = [
+  ["help", "Lista los comandos disponibles"],
+  ["new", "Nueva conversación"],
+  ["clear", "Borra la conversación actual"],
+  ["tools", "Abre el panel de herramientas"],
+  ["status", "Diagnóstico de N.O.V.A."],
+  ["models", "Catálogo de modelos"],
+  ["route", "Averigua qué modelo usaría para un texto"],
+  ["audit", "Actividad reciente de herramientas"],
+  ["model", "Fija el modelo de la conversación"],
+];
+let slashIndex = -1;
+function slashSuggest() {
+  const box = $("slash-suggest"), input = $("message"), text = input.value;
+  const match = /^\/(\S*)$/.exec(text);
+  box.hidden = true; slashIndex = -1;
+  if (!match) return '';
+  const token = match[1].toLowerCase();
+  const picks = SLASH_COMMANDS.filter(([cmd]) => cmd.startsWith(token));
+  box.replaceChildren();
+  if (!picks.length) return '';
+  for (const [cmd, help] of picks) {
+    const row = el("div", undefined, "suggest");
+    row.setAttribute("role", "option");
+    row.append(el("strong", "/" + cmd), el("span", help));
+    row.onmousedown = e => e.preventDefault();
+    row.onclick = () => { input.value = "/" + cmd + " "; input.focus(); slashSuggest(); };
+    box.append(row);
+  }
+  box.hidden = false;
+  return '/';
+}
+function highlightSuggest(rows) {
+  rows.forEach((r, i) => r.classList.toggle("selected", i === slashIndex));
+}
+async function runSlash(raw) {
+  const parts = (raw.slice(1).trim().split(/\s+/) || []);
+  const cmd = (parts[0] || "").toLowerCase();
+  const args = parts.slice(1).join(" ");
+  const userNode = renderMessage("user", raw);
+  let reply = "";
+  try {
+    switch (cmd) {
+      case "help":
+        reply = SLASH_COMMANDS.map(([c, d]) => `/${c} — ${d}`).join("\n");
+        break;
+      case "new":
+        newConversation(); return;
+      case "clear":
+        if (!current) { toast("No hay conversación activa."); userNode.remove(); return; }
+        if (!await confirmAction("¿Borrar esta conversación?", "Se eliminará su historial local.")) { userNode.remove(); return; }
+        await api("DELETE", "/v1/sessions/" + current); newConversation(); return;
+      case "tools":
+        showTools(); userNode.remove(); return;
+      case "status":
+        showStatus(); userNode.remove(); return;
+      case "models":
+        showCatalog(); userNode.remove(); return;
+      case "route":
+        if (!args) { reply = "Uso: /route <texto>"; break; }
+        {
+          const d = await api("POST", "/v1/route", {messages: [{role: "user", content: args}]});
+          reply = `Modelo: ${d.model}\nTarea: ${d.task_kind} · Rol: ${d.role} · Proveedor: ${d.provider}\nMotivo: ${d.reason}`;
+        }
+        break;
+      case "audit": {
+        const requested = parseInt(args, 10);
+        const n = requested ? Math.max(1, Math.min(200, requested)) : 10;
+        const data = await api("GET", "/v1/audit?limit=" + n);
+        if (!data.entries.length) { reply = "Aún no hay actividad de herramientas registrada."; break; }
+        reply = data.entries.map(e => `${(e.ts || "").slice(0, 19)} ${e.ok ? "✓" : "✗"} ${e.tool} ${e.action} → ${e.decision || ""}` + (e.message ? ` (${e.message})` : "")).join("\n");
+        break;
+      }
+      case "model":
+        if (!args) { reply = "Modelo actual: " + ($("model").value || "Selección automática"); break; }
+        {
+          const options = Array.from($("model").options).map(o => o.value).filter(Boolean);
+          if (!options.includes(args)) { reply = `Modelo "${args}" no disponible. Instalados: ${options.join(", ") || "(ninguno)"}`; break; }
+          $("model").value = args; reply = "Modelo fijado: " + args;
+        }
+        break;
+      default:
+        reply = "Comando desconocido: /" + cmd + ". Escribe /help para ver los disponibles.";
+    }
+    if (reply) {
+      $("hero").hidden = true;
+      renderMessage("assistant", reply);
+    }
+    stick = true; scrollChat();
+    $("message").value = ""; syncSend();
+  } catch (error) { userNode.remove(); fail(error); }
+}
 async function send(event) {
   event.preventDefault(); if (busy) return;
   const message = $("message").value.trim(); if (!message && !pending.length) return;
+  if (message.startsWith("/")) { await runSlash(message); return; }
   busy = true; $("send").disabled = true; $("agent").disabled = true; $("attach").disabled = true;
   let thinking, userNode;
   try {
@@ -311,8 +404,19 @@ messagesEl.addEventListener("scroll", () => {
 $("scroll-to-bottom").onclick = () => { stick = true; messagesEl.scrollTo({top: messagesEl.scrollHeight, behavior: "smooth"}); $("scroll-to-bottom").hidden = true; };
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>window.novaNavigate(b.dataset.view));
 $("panel-close").onclick=()=>$("panel").close();$("panel").addEventListener("close",()=>{panelView="";clearTimeout(prepareTimer);});
-$("message").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("compose").requestSubmit();}});
-$("message").addEventListener("input",()=>{$("message").style.height="auto";$("message").style.height=Math.min($("message").scrollHeight,200)+"px";syncSend();});
+$("message").addEventListener("keydown",e=>{
+  const box=$("slash-suggest");
+  if(!box.hidden){
+    const rows=[...box.querySelectorAll(".suggest")];
+    if(e.key==="ArrowDown"){e.preventDefault();slashIndex=(slashIndex+1)%rows.length;highlightSuggest(rows);return;}
+    if(e.key==="ArrowUp"){e.preventDefault();slashIndex=(slashIndex-1+rows.length)%rows.length;highlightSuggest(rows);return;}
+    if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();if(slashIndex<0&&rows.length===1)slashIndex=0;if(slashIndex>=0&&rows[slashIndex])rows[slashIndex].click();else box.hidden=true;return;}
+    if(e.key==="Escape"){box.hidden=true;slashIndex=-1;return;}
+  }
+  if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("compose").requestSubmit();}
+});
+$("message").addEventListener("input",()=>{$("message").style.height="auto";$("message").style.height=Math.min($("message").scrollHeight,200)+"px";syncSend();slashSuggest();});
+$("message").addEventListener("blur",()=>setTimeout(()=>{const box=$("slash-suggest");if(!box.contains(document.activeElement))box.hidden=true;},120));
 $("attach").onclick=()=>$("files").click();$("files").onchange=e=>{attachFiles([...e.target.files]).catch(fail);e.target.value="";};
 $("suggest-image").onclick=()=>$("files").click();
 $("suggest-file").onclick=()=>$("files").click();

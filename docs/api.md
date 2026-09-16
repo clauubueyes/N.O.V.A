@@ -276,13 +276,15 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 
 | Método y ruta | Descripción |
 |---|---|
-| `GET /healthz` | Salud: `provider`, `cloud_provider`, `ai_mode`, `privacy`, `status`, `version`. |
-| `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). |
+| `GET /healthz` | Salud: `provider`, `cloud_provider`, `ai_mode`, `privacy`, `status`, `version`, `uptime_s`, `sessions`, `model`, `rag_enabled`, `streams`. |
+| `GET /v1/models` | Modelos del proveedor (`name`, `size`, `modified_at`). Cacheado el tiempo configurable (`models_cache_ttl_s`, 2 s por defecto). |
+| `GET /v1/audit?limit=50` | Observabilidad: últimas entradas del audit log (`limit` entre 1 y 200) -> `{"count", "entries"}`. |
 | `GET /v1/tools` | Herramientas registradas (estándar + `remember`/`memory_search`; host tools solo con `api.host_enabled`; web tools solo con `web.enabled`; tools de plugins solo si hay plugins cargados). |
 | `POST /v1/route` | PHASE 7 + 14 — decisión del `ModelRouter`: `{"messages":[...]}` -> `{"task_kind", "provider", "role", "model", "reason"}` (`provider` es `ollama` u `opencode`). |
-| `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens"}`. |
+| `POST /v1/chat` | Completado stateless: `{"messages":[{"role","content"}], "model", "temperature", "max_tokens", "stream"}`. Con `stream: true` responde **SSE** `text/event-stream`. |
 | `POST /v1/sessions` | Crea una sesión: `{}` o `{"agent": "research"}` -> `{"session_id", "model", "agent"}`. |
-| `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria: `{"message", "model"}` -> `{"reply", "context", "steps", ...}`. |
+| `POST /v1/sessions/{id}/chat` | Turno con sesión+memoria+RAG: `{"message", "model", "attachments", "stream"}` -> `{"reply", "context", "steps", ...}` (o SSE con `stream: true`). |
+| `POST /v1/sessions/{id}/stop` | Cancela el stream en curso de la sesión: `{"session_id", "stopped"}`. |
 | `GET /v1/sessions/{id}/messages` | Historial de la sesión. |
 | `DELETE /v1/sessions/{id}` | Elimina la sesión. |
 | `POST /v1/sessions/{id}/run` | Ejecuta una herramienta bajo permisos: `{"tool", "args"}` -> `{"result": ToolResult}`. |
@@ -298,6 +300,9 @@ Interfaz web en `/` y OpenAPI en `/docs`. `create_app(settings, provider=...)` p
 Notas:
 
 - El endpoint de sesión reutiliza `ChatSession` + `MemoryService`: cada turno se persiste y se inyecta el contexto relevante antes de llamar al LLM.
+- Las sesiones son persistentes: tras reiniciar la API, `GET /v1/sessions` lista las conversaciones guardadas en SQLite y abrir una restaura su historial, modelo y modo local (`local_only`). Un borrado en `DELETE /v1/sessions/{id}` elimina también su persistencia.
+- RAG opcional (`settings.rag.enabled`): los adjuntos de texto grandes (≥ `index_above_chars`, 12 000 caracteres) se indexan en `<memoria>.rag.db` (FTS5 + embeddings) y solo los fragmentos relevantes se inyectan en el contexto, junto a la memoria.
+- **Streaming SSE**: `POST /v1/chat` y `POST /v1/sessions/{id}/chat` aceptan `"stream": true` y responden `Content-Type: text/event-stream` con marcos `data: {json}\n\n`: `{"delta": "...", "done": false}` (fragmento), `{"usage": {...}}`, y un marco final `{"done": true, "cancelled", "model", "content"}` (o `{"error", "done": true}`). El estado (memoria, transcript, conversaciones) solo se registra al terminar el stream; ante error o cancelación se restaura el historial previo. `POST /v1/sessions/{id}/stop` cancela el stream en curso (los agentes no soportan streaming). Dos streams a la vez para la misma sesión -> `409`.
 - PHASE 7 + 14: si `POST /v1/sessions/{id}/chat` no recibe `model`, el `ModelRouter` elige **proveedor + modelo** por turno según el texto (tarea + recursos + privacidad). En HYBRID las tareas pesadas sin recursos pueden usar OpenCode; si el cloud falla, `502` solo cuando el fallback local también falla. `POST /v1/route` expone esa decisión.
 - Si la sesión se creó con `agent`, `/chat` usa `Agent.act` y devuelve `steps` (una entrada por tool-call: nombre, args, ok, mensaje, datos) además de la respuesta.
 - Los agentes estatelés persisten por nombre en el `AppState` (`nova.api.app`): mantienen sesión, memoria propia y historial entre llamadas.

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -77,6 +81,11 @@ class TestMeta:
             assert data["status"] == "ok"
             assert data["provider"] is True
             assert data["version"]
+            assert isinstance(data["uptime_s"], int) and data["uptime_s"] >= 0
+            assert isinstance(data["sessions"], int)
+            assert data["model"]
+            assert data["rag_enabled"] is True
+            assert isinstance(data["streams"], int)
 
     def test_healthz_degraded(self, tmp_path) -> None:
         with _client(tmp_path, provider=BoomProvider()) as client:
@@ -108,6 +117,74 @@ class TestModels:
             assert response.status_code == 502
 
 
+class CountingProvider(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model_list_calls = 0
+
+    def list_models(self) -> list[ModelInfo]:
+        self.model_list_calls += 1
+        return super().list_models()
+
+
+class TestModelsCache:
+    def _cached_client(self, tmp_path, provider, ttl):
+        settings = load_settings()
+        settings.memory.db_file = str(tmp_path / "memory.db")
+        settings.audit.file = str(tmp_path / "audit.jsonl")
+        return TestClient(create_app(settings, provider=provider, models_cache_ttl_s=ttl))
+
+    def test_models_cached_within_ttl(self, tmp_path) -> None:
+        provider = CountingProvider()
+        with self._cached_client(tmp_path, provider, 60) as client:
+            first = client.get("/v1/models").json()
+            assert first[0]["name"] == "fake-model"
+            second = client.get("/v1/models").json()
+            assert second == first
+            assert provider.model_list_calls == 1
+
+    def test_models_cache_expires(self, tmp_path) -> None:
+        provider = CountingProvider()
+        with self._cached_client(tmp_path, provider, 0.05) as client:
+            client.get("/v1/models")
+            assert provider.model_list_calls == 1
+            time.sleep(0.08)
+            client.get("/v1/models")
+            assert provider.model_list_calls == 2
+
+    def test_models_cache_does_not_cache_errors(self, tmp_path) -> None:
+        with self._cached_client(tmp_path, BoomProvider(), 60) as client:
+            assert client.get("/v1/models").status_code == 502
+            assert client.get("/v1/models").status_code == 502
+
+
+class TestAuditEndpoint:
+    def test_list_audit_empty(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            data = client.get("/v1/audit").json()
+            assert data["count"] == 0
+            assert data["entries"] == []
+
+    def test_list_audit_records_tool_runs(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            session_id = _session_id(client)
+            client.post(
+                f"/v1/sessions/{session_id}/run",
+                json={"tool": "calculate", "args": {"expression": "2+2"}},
+            )
+            data = client.get("/v1/audit?limit=10").json()
+            assert data["count"] >= 1
+            entry = data["entries"][-1]
+            assert entry["tool"] == "calculate"
+            assert "decision" in entry
+            assert "ts" in entry
+
+    def test_list_audit_limit_validation(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            assert client.get("/v1/audit?limit=0").status_code == 422
+            assert client.get("/v1/audit?limit=999").status_code == 422
+
+
 class TestRouting:
     def _routed_client(self, tmp_path, provider=None) -> TestClient:
         settings = load_settings()
@@ -118,7 +195,17 @@ class TestRouting:
             "coding": "coder-model",
             "local": "local-model",
         }
-        return TestClient(create_app(settings, provider=provider or FakeProvider()))
+        # Deterministic resources (abundant RAM) so routing tests are
+        # machine-independent instead of depending on live readings.
+        from nova.llm.resources import ResourceManager
+
+        abundant = ResourceManager(
+            ram_reader=lambda: {"total": 64.0, "available": 56.0},
+            cpu_reader=lambda: (20.0, 8),
+            gpu_reader=lambda: (True, 24.0),
+            battery_reader=lambda: (100.0, True),
+        )
+        return TestClient(create_app(settings, provider=provider or FakeProvider(), router_resources=abundant))
 
     def test_route_simple(self, tmp_path) -> None:
         with self._routed_client(tmp_path) as client:
@@ -390,3 +477,177 @@ class TestAgentsApi:
                 == 404
             )
             assert client.post("/v1/sessions", json={"agent": "unknown"}).status_code == 404
+
+
+class TestPersistence:
+    def _restartable_client(self, tmp_path):
+        memory_path = tmp_path / "memory.db"
+        audit_path = tmp_path / "audit.jsonl"
+
+        def make_client() -> TestClient:
+            settings = load_settings()
+            settings.memory.db_file = str(memory_path)
+            settings.audit.file = str(audit_path)
+            return TestClient(create_app(settings, provider=FakeProvider()))
+
+        return make_client
+
+    def test_session_survives_restart(self, tmp_path) -> None:
+        make_client = self._restartable_client(tmp_path)
+        with make_client() as client:
+            session_id = _session_id(client)
+            response = client.post(
+                f"/v1/sessions/{session_id}/chat",
+                json={"message": "hola persistente", "model": "fake-model"},
+            )
+            assert response.status_code == 200
+            assert response.json()["model"] == "fake-model"
+        with make_client() as client:
+            sessions = client.get("/v1/sessions").json()
+            assert any(s["session_id"] == session_id for s in sessions)
+            restored = client.get("/v1/sessions").json()
+            row = next(s for s in restored if s["session_id"] == session_id)
+            assert row["model"] == "fake-model"
+            messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
+            assert messages[-2]["content"] == "hola persistente"
+            assert messages[-1]["content"] == "echo: hola persistente"
+
+    def test_delete_session_removes_persistence(self, tmp_path) -> None:
+        make_client = self._restartable_client(tmp_path)
+        with make_client() as client:
+            session_id = _session_id(client)
+            client.post(
+                f"/v1/sessions/{session_id}/chat", json={"message": "hola"}
+            )
+        with make_client() as client:
+            assert client.delete(f"/v1/sessions/{session_id}").status_code == 200
+        with make_client() as client:
+            assert client.get(f"/v1/sessions/{session_id}/messages").status_code == 404
+
+
+class StreamingFakeProvider(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stream_calls: list[ChatCompletionRequest] = []
+
+    def stream(self, request, cancellation=None):
+        self.stream_calls.append(request)
+        for piece in ["hola ", "cruel ", "mundo"]:
+            if cancellation is not None and cancellation.cancelled:
+                return
+            yield {"content": piece}
+        yield {"usage": {"total_tokens": 6}}
+
+
+class GateStreamingProvider(StreamingFakeProvider):
+    def __init__(self, gate: threading.Event) -> None:
+        super().__init__()
+        self.gate = gate
+        self.emitted = threading.Event()
+
+    def stream(self, request, cancellation=None):
+        for piece in ["hola ", "cruel "]:
+            if cancellation is not None and cancellation.cancelled:
+                return
+            yield {"content": piece}
+            self.emitted.set()
+        while not self.gate.is_set():
+            if cancellation is not None and cancellation.cancelled:
+                return
+            time.sleep(0.01)
+        yield {"content": "mundo"}
+        yield {"usage": {"total_tokens": 6}}
+
+
+class TestStreaming:
+    @staticmethod
+    def _events(body: str) -> list[dict]:
+        return [
+            json.loads(line[len("data: "):])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
+
+    def test_chat_stream_yields_delta_and_done(self, tmp_path) -> None:
+        with _client(tmp_path, provider=StreamingFakeProvider()) as client:
+            with client.stream(
+                "POST",
+                "/v1/chat",
+                json={"messages": [{"role": "user", "content": "hola"}], "stream": True},
+            ) as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"].startswith("text/event-stream")
+                body = "".join(response.iter_text())
+        frames = self._events(body)
+        assert [f for f in frames if "delta" in f]
+        assert "".join(f.get("delta", "") for f in frames) == "hola cruel mundo"
+        done = [f for f in frames if f.get("done") is True]
+        assert len(done) == 1
+        assert done[0]["content"] == "hola cruel mundo"
+        assert done[0]["model"]
+
+    def test_session_chat_stream_and_records(self, tmp_path) -> None:
+        provider = StreamingFakeProvider()
+        with _client(tmp_path, provider=provider) as client:
+            session_id = _session_id(client)
+            with client.stream(
+                "POST",
+                f"/v1/sessions/{session_id}/chat",
+                json={"message": "hola", "stream": True},
+            ) as response:
+                body = "".join(response.iter_text())
+        frames = self._events(body)
+        done = [f for f in frames if f.get("done") is True and not f.get("cancelled")]
+        assert len(done) == 1
+        assert done[0]["content"] == "hola cruel mundo"
+        assert "usage" in done[0]
+        assert len(provider.stream_calls) == 1
+        with _client(tmp_path, provider=provider) as client:
+            messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
+            assert messages[-2]["content"] == "hola"
+            assert messages[-1]["content"] == "hola cruel mundo"
+
+    def test_session_stream_does_not_stitch_after_error(self, tmp_path) -> None:
+        with _client(tmp_path, provider=BoomProvider()) as client:
+            session_id = _session_id(client)
+            with client.stream(
+                "POST",
+                f"/v1/sessions/{session_id}/chat",
+                json={"message": "hola", "stream": True},
+            ) as response:
+                body = "".join(response.iter_text())
+        frames = self._events(body)
+        assert any("error" in f for f in frames)
+        assert any(f.get("done") is not None and f.get("done") for f in frames)
+        with _client(tmp_path, provider=BoomProvider()) as client:
+            messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
+            assert messages == []
+
+    def test_session_stream_stop_cancels(self, tmp_path) -> None:
+        gate = threading.Event()
+        provider = GateStreamingProvider(gate)
+        with _client(tmp_path, provider=provider) as client:
+            session_id = _session_id(client)
+            captured = {}
+
+            def consume() -> None:
+                with client.stream(
+                    "POST",
+                    f"/v1/sessions/{session_id}/chat",
+                    json={"message": "hola", "stream": True},
+                ) as response:
+                    captured["status"] = response.status_code
+                    captured["body"] = "".join(response.iter_text())
+
+            thread = threading.Thread(target=consume)
+            thread.start()
+            assert provider.emitted.wait(timeout=5)
+            stop = client.post(f"/v1/sessions/{session_id}/stop")
+            assert stop.status_code == 200
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+        frames = self._events(captured["body"])
+        done = [f for f in frames if f.get("done") is True]
+        assert len(done) == 1
+        assert done[0]["cancelled"] is True
+        assert done[0]["content"] == "hola cruel "

@@ -10,6 +10,8 @@ llm:
     local: llama3.1:8b
     small: llama3.2:1b
     coding: qwen2.5-coder:1.5b
+    vision: llama3.2-vision:11b
+    reasoning: llama3.1:8b
 model_router:
   min_ram_gb: 8.0
   battery: true
@@ -29,10 +31,16 @@ logging:
   file: logs/nova.log
 session:
   max_history_messages: 20
-  system_prompt: 'You are N.O.V.A. (Neural Operations & Virtual Assistant), a personal
-    AI assistant running locally. Be concise, precise and helpful.
+  system_prompt: >-
+    Eres N.O.V.A. (Neural Operations & Virtual Assistant), tu asistente personal
+    de IA que se ejecuta 100 % local. Sé conciso, preciso y útil.
 
-    '
+    Reglas de idioma:
+    - Responde SIEMPRE en el mismo idioma que el último mensaje del usuario
+      (o el idioma de la conversación), aunque le describas una imagen, un
+      archivo o una búsqueda web.
+    - Si el usuario escribe en español, responde en español. Si cambia de idioma
+      a mitad de la conversación, síguele el cambio.
 permissions:
   autonomy: ask
   allow:
@@ -47,7 +55,10 @@ memory:
   max_context: 3
   similarity_threshold: 0.3
 api:
-  host: 0.0.0.0
+  # Loopback por defecto (seguro): la API solo responde en esta máquina.
+  # Para exponerla a la LAN (0.0.0.0) o a otro host, configura también api.token,
+  # porque N.O.V.A. se niega a arrancar en una interfaz no-loopback sin token.
+  host: 127.0.0.1
   port: 8000
   cors_origins: ["*"]   # hosting estático (p. ej. Vercel) que conecta con ?api=<base>
 host:

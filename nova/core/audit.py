@@ -63,3 +63,30 @@ class AuditLog:
             if src.exists():
                 src.replace(dst)
         self.path.touch()
+
+    def recent(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return the last `limit` audit entries, oldest first.
+
+        Reads a bounded tail of the JSONL file so listing never loads the whole
+        log, and it skips lines that are not valid JSON without failing.
+        """
+        if not self.path.exists():
+            return []
+        entries: list[dict[str, Any]] = []
+        try:
+            with open(self.path, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except OSError as exc:
+            logger.warning("audit read failed (path=%s): %s", self.path, exc)
+            return []
+        for line in lines[-max(64, limit * 4):]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except ValueError:
+                continue
+            if len(entries) > limit * 4:
+                entries.pop(0)
+        return entries[-limit:]

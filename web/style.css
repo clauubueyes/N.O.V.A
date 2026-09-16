@@ -936,6 +936,36 @@ option { background: var(--surface); color: var(--text); }
   animation: fade-in var(--speed-fast) ease;
 }
 
+.slash-suggest {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--composer-shadow);
+  margin: 6px 0;
+  overflow: hidden;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.slash-suggest .suggest {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+}
+.slash-suggest .suggest:last-child { border-bottom: 0; }
+.slash-suggest .suggest strong { min-width: 110px; color: var(--accent); font-weight: 600; }
+.slash-suggest .suggest span { color: var(--text-soft); font-size: 12px; }
+.slash-suggest .suggest.selected, .slash-suggest .suggest:hover { background: var(--surface-soft); }
+
 .composer-note {
   font-size: 10.5px;
   color: var(--faint);

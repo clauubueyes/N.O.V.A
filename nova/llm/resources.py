@@ -6,12 +6,75 @@ Kept dependency-free on purpose: reads OS counters with the standard library onl
 so the model router can pick a model according to the available RAM/CPU, an
 optional GPU/VRAM reading, and the battery state. Every reading is best-effort
 and never raises; anything unreadable falls back to conservative defaults.
+
+PHASE 5.2 — real Windows readings via ctypes: global physical RAM
+(GlobalMemoryStatusEx) and CPU load (GetSystemTimes sampled twice) instead of
+the previous conservative placeholders.
 """
 
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Callable
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class _MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", wintypes.DWORD),
+            ("dwMemoryLoad", wintypes.DWORD),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    def _windows_memory() -> dict[str, float]:
+        status = _MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return {}
+        return {
+            "total": status.ullTotalPhys / (1024**3),
+            "available": status.ullAvailPhys / (1024**3),
+        }
+
+    def _windows_cpu_load() -> tuple[float, int]:
+        """Real CPU usage percentage via GetSystemTimes (two samples)."""
+        kernel32 = ctypes.windll.kernel32
+
+        def _sample() -> tuple[int, int, int]:
+            idle = wintypes.FILETIME()
+            kernel = wintypes.FILETIME()
+            user = wintypes.FILETIME()
+            if not kernel32.GetSystemTimes(
+                ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
+            ):
+                return (0, 0, 0)
+
+            def to_us(ft: wintypes.FILETIME) -> int:
+                return ft.dwHighDateTime << 32 | ft.dwLowDateTime
+
+            return to_us(idle), to_us(kernel), to_us(user)
+
+        first = _sample()
+        time.sleep(0.25)
+        second = _sample()
+        idle0, kernel0, user0 = first
+        idle1, kernel1, user1 = second
+        delta_total = (kernel1 + user1 + idle1) - (kernel0 + user0 + idle0)
+        if delta_total <= 0:
+            return 50.0, 0
+        busy = (kernel1 + user1) - (kernel0 + user0)
+        # kernel includes the idle thread time on Windows, so count idle only once
+        usage = max(0.0, min(100.0, busy / delta_total * 100.0))
+        return usage, os.cpu_count() or 0
 
 
 @dataclass
@@ -78,6 +141,8 @@ class ResourceManager:
 
     # -- defaults -----------------------------------------------------------
     def _default_ram(self) -> dict[str, float]:
+        if sys.platform == "win32":
+            return _windows_memory()
         if sys.platform.startswith("linux"):
             return _read_meminfo_linux()
         # Cross-platform fallback: os.sysconf works on many POSIX; on Windows the
@@ -92,6 +157,11 @@ class ResourceManager:
 
     def _default_cpu(self) -> tuple[float, int]:
         count = os.cpu_count() or 0
+        if sys.platform == "win32":
+            try:
+                return _windows_cpu_load()
+            except Exception:  # noqa: BLE001 - reading must never raise
+                pass
         # Reading real CPU load without psutil is not portable; assume a neutral
         # moderate load so the router does not over/under-select.
         return 50.0, count
