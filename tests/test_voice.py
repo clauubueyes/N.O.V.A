@@ -241,3 +241,116 @@ def test_missing_status_reports_pieces(monkeypatch) -> None:
     assert session.available() is True
     session2 = VoiceSession(SoundDeviceSource(device=None), stt_ok, tts)
     assert "mic (sounddevice)" in session2.status()
+
+
+def test_registry_select_tts() -> None:
+    from nova.core.config import VoiceTTSSettings
+    from nova.voice import Pyttsx3TTS, select_tts
+    from nova.voice.piper import PiperTTS
+
+    assert isinstance(select_tts(VoiceTTSSettings(backend="pyttsx3")), Pyttsx3TTS)
+    assert isinstance(select_tts(VoiceTTSSettings(backend="piper")), PiperTTS)
+    assert isinstance(select_tts(VoiceTTSSettings(backend="no-existe")), Pyttsx3TTS)
+
+
+def test_registry_select_stt() -> None:
+    from nova.core.config import VoiceSTTSettings
+    from nova.voice import VoskSTT, select_stt
+
+    assert isinstance(select_stt(VoiceSTTSettings(backend="vosk")), VoskSTT)
+    assert isinstance(select_stt(VoiceSTTSettings(backend="no-existe")), VoskSTT)
+
+
+def test_list_backends_metadata() -> None:
+    from nova.voice import list_tts_backends
+
+    backends = list_tts_backends()
+    ids = {b["id"] for b in backends}
+    assert {"pyttsx3", "piper"} <= ids
+    for backend in backends:
+        assert backend["name"]
+        assert isinstance(backend["available"], bool)
+        assert "install_hint" in backend
+
+
+def test_piper_availability_reports_missing_package(monkeypatch) -> None:
+    from nova.voice import PiperTTS
+
+    monkeypatch.setitem(sys.modules, "piper", None)
+    ok, reason = PiperTTS().availability()
+    assert ok is False
+    assert "piper" in reason.lower()
+
+
+def test_piper_availability_requires_voice_when_no_autodownload(monkeypatch, tmp_path) -> None:
+    from nova.voice import PiperTTS
+
+    monkeypatch.setitem(sys.modules, "piper", object())
+    tts = PiperTTS(voice_dir=str(tmp_path), auto_download=False)
+    ok, reason = tts.availability()
+    assert ok is False
+    assert "descarga automática desactivada" in reason
+
+
+def test_scrub_profanity_es_en() -> None:
+    from nova.voice import scrub_profanity
+
+    assert "..." in scrub_profanity("esto es una mierda increíble")
+    assert "..." in scrub_profanity("what the fuck is this")
+    assert "mierda" not in scrub_profanity("mierda")
+    assert scrub_profanity("mierda") == "..."
+    plain = scrub_profanity("la nave espacial despegó tranquilamente")
+    assert "nave" in plain
+
+
+def test_clean_for_tts_strips_markdown_urls_and_code() -> None:
+    from nova.voice import clean_for_tts
+
+    text = (
+        "## Título\n"
+        "Mira https://example.com/x **esto** `inline` y ```\n"
+        "código\n``` \n"
+        "[enlace](https://x.es) con 😀 y una mierda de ejemplo."
+    )
+    cleaned = clean_for_tts(text)
+    assert "```" not in cleaned
+    assert "http" not in cleaned
+    assert "**" not in cleaned
+    assert "😀" not in cleaned
+    assert "mierda" not in cleaned
+    assert "##" not in cleaned
+    assert cleaned.count("  ") == 0
+
+
+def test_say_cleans_text_and_filters_profanity() -> None:
+    session = VoiceSession(FakeAudioSource(), FakeSTT(), FakeTTS())
+    assert session.say("Respuesta `x` con http://url.es y mierda.") is True
+    spoken = session.tts.spoken[0]
+    assert "`" not in spoken
+    assert "http" not in spoken
+    assert "mierda" not in spoken
+
+
+def test_voice_settings_tts_defaults() -> None:
+    from nova.core.config import VoiceSettings
+
+    s = VoiceSettings()
+    assert s.tts.voice_dir is None
+    assert s.tts.auto_download is True
+
+
+def test_voice_env_tts_overrides(tmp_path, monkeypatch) -> None:
+    for var in list(__import__("os").environ):
+        if var.startswith("NOVA_"):
+            monkeypatch.delenv(var, raising=False)
+    config = tmp_path / "config.yaml"
+    config.write_text("voice:\n  enabled: true\n", encoding="utf-8")
+    monkeypatch.setenv("NOVA_VOICE_TTS_BACKEND", "piper")
+    monkeypatch.setenv("NOVA_VOICE_TTS_VOICE", "es_ES-davefx-medium")
+    monkeypatch.setenv("NOVA_VOICE_TTS_VOICE_DIR", "C:\\voices")
+    monkeypatch.setenv("NOVA_VOICE_TTS_AUTO_DOWNLOAD", "false")
+    s = load_settings(path=str(config))
+    assert s.voice.tts.backend == "piper"
+    assert s.voice.tts.voice == "es_ES-davefx-medium"
+    assert s.voice.tts.voice_dir == "C:\\voices"
+    assert s.voice.tts.auto_download is False

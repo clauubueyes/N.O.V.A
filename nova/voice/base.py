@@ -30,6 +30,11 @@ class STTProvider(ABC):
     def transcribe(self, audio: AudioChunk) -> str:
         """Return the transcribed text. Raise VoiceError on failure."""
 
+    def availability(self) -> tuple[bool, str]:
+        """Return ``(ok, reason)`` without ever raising. Mirror of available()
+        kept for forward/backward compatibility (see registry.py)."""
+        return self.available(), ""
+
     def close(self) -> None:
         ...
 
@@ -46,6 +51,11 @@ class TTSProvider(ABC):
     @abstractmethod
     def speak(self, text: str) -> None:
         """Speak `text` aloud. Raise VoiceError on failure."""
+
+    def availability(self) -> tuple[bool, str]:
+        """Return ``(ok, reason)`` without ever raising. Mirror of available()
+        kept for forward/backward compatibility (see registry.py)."""
+        return self.available(), ""
 
     def close(self) -> None:
         ...

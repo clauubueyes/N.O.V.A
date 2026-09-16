@@ -239,11 +239,19 @@ class VoiceSTTSettings(BaseSettings):
 
 
 class VoiceTTSSettings(BaseSettings):
-    """PHASE 10 — text-to-speech backend. OSS/local: `pyttsx3` (OS voices)."""
+    """PHASE 10 — text-to-speech backend.
+
+    `pyttsx3` uses the OS voices (always available). When `backend` is `piper`,
+    N.O.V.A. uses Piper TTS (natural, fully offline); the voice ONNX is
+    downloaded once into `voice_dir` (default `~/.nova/voices`) on first use
+    unless `auto_download` is disabled.
+    """
 
     backend: str = "pyttsx3"
     voice: str | None = None
     rate: int = 180
+    voice_dir: str | None = None
+    auto_download: bool = True
 
 
 class PluginSettings(BaseSettings):
@@ -457,6 +465,9 @@ _ENV_OVERRIDES: dict[str, dict[str, str]] = {
         "device": "device",
         "stt_backend": "stt.backend",
         "tts_backend": "tts.backend",
+        "tts_voice": "tts.voice",
+        "tts_voice_dir": "tts.voice_dir",
+        "tts_auto_download": "tts.auto_download",
     },
     "plugins": {
         "enabled": "enabled",

@@ -22,25 +22,30 @@ class VoskSTT(STTProvider):
         self._model = None  # type: ignore[assignment]
 
     def available(self) -> bool:
+        return self.availability()[0]
+
+    def availability(self) -> tuple[bool, str]:
         if self._model is not None:
-            return True
+            return True, ""
         try:
             import vosk  # noqa: F401
         except ImportError:
-            return False
+            return False, "vosk no está instalado (pip install vosk)"
         if self._model_dir is None or not self._model_dir.exists():
-            return False
-        try:
-            import vosk
+            return False, f"modelo Vosk no encontrado en {self._model_dir}"
+        return True, ""
 
-            self._model = vosk.Model(str(self._model_dir))
-            return True
-        except Exception:
-            return False
+    def _load(self) -> None:
+        import vosk
+
+        self._model = vosk.Model(str(self._model_dir))
 
     def transcribe(self, audio: AudioChunk) -> str:
-        if self._model is None and not self.available():
-            raise VoiceError(f"STT not available (vosk + model at {self._model_dir})")
+        if self._model is None:
+            ok, reason = self.availability()
+            if not ok:
+                raise VoiceError(f"STT not available (vosk): {reason}")
+            self._load()
         import vosk
 
         recognizer = vosk.KaldiRecognizer(self._model, audio.sample_rate)

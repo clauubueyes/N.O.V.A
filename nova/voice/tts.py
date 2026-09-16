@@ -15,12 +15,15 @@ class Pyttsx3TTS(TTSProvider):
         self._rate = rate
 
     def available(self) -> bool:
+        return self.availability()[0]
+
+    def availability(self) -> tuple[bool, str]:
         try:
             import pyttsx3  # noqa: F401
 
-            return True
+            return True, ""
         except ImportError:
-            return False
+            return False, "pyttsx3 no está instalado (pip install pyttsx3)"
 
     def speak(self, text: str) -> None:
         if not self.available():
