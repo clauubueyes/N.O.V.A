@@ -86,9 +86,11 @@ voice:
     model_dir: C:\Users\Claudia-Everlasting\.nova\vosk\vosk-model-small-es-0.42
     language: es
   tts:
-    backend: pyttsx3
-    voice: null
+    backend: piper  # voz natural 100% local (descarga la voz ONNX la primera vez)
+    voice: es_ES-davefx-medium
     rate: 180
+    voice_dir: null   # ej: C:\Users\Claudia-Everlasting\.nova\voices
+    auto_download: true
   wake_word: null
 plugins:
   enabled:

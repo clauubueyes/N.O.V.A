@@ -36,6 +36,24 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigu
 - **Rendimiento (5.8)**: cache corto (TTL configurable en `create_app`, 2 s) en `GET /v1/models`
   para no golpear a Ollama en cada polling.
 
+## [0.17.1] - 2026-09-16
+
+### Añadido — Voz mejorada (Fase 8b)
+
+- **Registro de engines de voz** (`nova/voice/registry.py`): `list_stt_backends`/`list_tts_backends`
+  con `{id, name, available, reason, install_hint}` y `select_stt`/`select_tts` (patrón del estudio de
+  VoiceStudio: disponibilidad con razón, nunca lanzar. Los `status()` del CLI `/voice` ya explican el
+  motivo exacto de cada pieza que falta.
+- **PiperTTS** (`nova/voice/piper.py`): nuevo backend `voice.tts.backend: piper` con voz natural
+  100 % local (Apache/MIT). La voz ONNX (ej. `es_ES-davefx-medium`) se descarga una sola vez desde
+  `rhasspy/piper-voices` a `voice_dir` (defecto `~/.nova/voices`, override `NOVA_VOICE_DIR`) con
+  `voice.tts.auto_download`. Reproducción con `winsound` (Windows) o `aplay`/`paplay`/`afplay`.
+- **Filtro de texto para TTS** (`nova/voice/textfilter.py`): `clean_for_tts` quita Markdown/código,
+  URLs, emojis y groserías; `scrub_profanity` censura insultos es/en. Se aplica automáticamente en
+  `VoiceSession.say` (y por tanto en `/say` y el bucle de voz del CLI).
+- `voice.tts.voice_dir` y `voice.tts.auto_download` en la config (con overrides de entorno
+  `NOVA_VOICE_TTS_*`); `piper-tts` añadido al extra `voice` de pyproject.
+
 ## [0.16.0] - 2026-09-14
 
 ### Añadido — PHASE 15: Desktop Product + Acceso compartido

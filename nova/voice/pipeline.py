@@ -41,13 +41,17 @@ class VoiceSession:
 
     def status(self) -> list[str]:
         """List of missing pieces (empty when fully usable)."""
+        from nova.voice.registry import _availability
+
         missing = []
         if not self.source.available():
             missing.append("mic (sounddevice)")
-        if not self.stt.available():
-            missing.append("stt (vosk + model)")
-        if not self.tts.available():
-            missing.append("tts (pyttsx3)")
+        stt_ok, stt_reason = _availability(self.stt)
+        if not stt_ok:
+            missing.append(f"stt ({self.stt.name}): {stt_reason}")
+        tts_ok, tts_reason = _availability(self.tts)
+        if not tts_ok:
+            missing.append(f"tts ({self.tts.name}): {tts_reason}")
         return missing
 
     def listen_once(
@@ -104,9 +108,11 @@ class VoiceSession:
         return text
 
     def say(self, text: str) -> bool:
-        """Speak `text` aloud. Returns True when spoken, False on failure."""
+        """Speak `text` aloud (cleaned for speech). Returns True when spoken."""
+        from nova.voice.textfilter import clean_for_tts
+
         try:
-            self.tts.speak(text)
+            self.tts.speak(clean_for_tts(text))
             return True
         except VoiceError as exc:
             self._logger.warning("voice: tts failed: %s", exc)
@@ -130,15 +136,15 @@ def _build_source(settings: "VoiceSettings") -> AudioSource:
 
 
 def _build_stt(settings: "VoiceSettings") -> STTProvider:
-    from nova.voice.vosk import VoskSTT
+    from nova.voice.registry import select_stt
 
-    return VoskSTT(model_dir=settings.stt.model_dir, language=settings.stt.language)
+    return select_stt(settings.stt)
 
 
 def _build_tts(settings: "VoiceSettings") -> TTSProvider:
-    from nova.voice.tts import Pyttsx3TTS
+    from nova.voice.registry import select_tts
 
-    return Pyttsx3TTS(voice=settings.tts.voice, rate=settings.tts.rate)
+    return select_tts(settings.tts)
 
 
 def build_voice(settings: "VoiceSettings") -> VoiceSession | None:

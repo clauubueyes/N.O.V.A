@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nova"
-version = "0.17.0"
+version = "0.17.1"
 description = "N.O.V.A. - Neural Operations & Virtual Assistant"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,6 +36,7 @@ voice = [
     "numpy>=1.26",
     "vosk>=0.3.45",
     "pyttsx3>=2.95",
+    "piper-tts>=1.2.0",
     "sounddevice>=0.4.6",
 ]
 
