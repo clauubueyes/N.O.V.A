@@ -2,6 +2,14 @@
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigue versionado semántico.
 
+## [0.18.1] - 2026-09-17
+
+### Corregido — Actualización segura del backend
+
+- El instalador cierra y espera al backend anterior antes de reemplazar los archivos de la aplicación.
+- La UI, el launcher y el backend verifican su versión y bloquean la conexión ante cualquier mismatch.
+- Añadidas pruebas para impedir que una UI nueva continúe atendida por un backend antiguo.
+
 ## [0.18.0] - 2026-09-16
 
 ### Añadido — Orquestación Hybrid AI local-first
