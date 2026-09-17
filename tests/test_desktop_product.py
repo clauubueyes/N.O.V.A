@@ -354,3 +354,55 @@ def test_bundle_does_not_adopt_existing_data(environment, tmp_path):
     with pytest.raises(ValueError):
         install_bundle(archive, {'sha256': sha256(archive), 'version': 'test'}, target)
     assert (target / 'user.txt').read_text() == 'keep'
+
+
+def test_bundle_stops_previous_core_before_replacing_installation(environment, tmp_path, monkeypatch):
+    import nova.setup.bundle as bundle
+    from nova.setup.state import StateStore
+
+    archive = tmp_path / 'package.zip'
+    with zipfile.ZipFile(archive, 'w') as package:
+        package.writestr('NOVA.exe', b'new executable')
+    target = tmp_path / 'install'
+    target.mkdir()
+    (target / 'NOVA.exe').write_bytes(b'old executable')
+    (target / bundle.MARKER).write_text(json.dumps({'product': 'NOVA', 'version': 'old'}), encoding='utf-8')
+    StateStore().record_resource(target, 'binary')
+    stopped = []
+    monkeypatch.setattr(bundle, 'stop_running_core', lambda: stopped.append(True))
+
+    install_bundle(archive, {'sha256': sha256(archive), 'version': 'new'}, target)
+
+    assert stopped == [True]
+    assert (target / 'NOVA.exe').read_bytes() == b'new executable'
+
+
+def test_connection_closes_incompatible_core(environment, tmp_path, monkeypatch):
+    import nova.desktop.runtime as runtime
+
+    home = tmp_path / 'home'
+    home.mkdir(exist_ok=True)
+    (home / 'config.yaml').write_text('api:\n  token: secret\n', encoding='utf-8')
+    marker = home / 'core-runtime.json'
+    marker.write_text(json.dumps({'port': 8123}), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'installation_home', lambda: home)
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, *args, **kwargs):
+            return type('Response', (), {'status_code': 200, 'json': lambda self: {'desktop': True, 'version': '0.17.2'}})()
+
+        def post(self, *args, **kwargs):
+            marker.unlink()
+
+    monkeypatch.setattr(runtime.httpx, 'Client', Client)
+
+    assert runtime.connection(home) is None

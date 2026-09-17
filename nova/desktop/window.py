@@ -92,7 +92,7 @@ class DesktopWindow(QMainWindow):
         self.label.setText('Abriendo N.O.V.A.…')
         self.started = time.monotonic()
         found = connection()
-        if not found:
+        if not found and not (installation_home() / 'core-runtime.json').exists():
             self.process = spawn('--core')
         self.timer.start(500)
 

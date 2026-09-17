@@ -475,8 +475,8 @@ def create_app(
         return FileResponse(_STATIC_DIR / "index.html")
 
     @app.get("/healthz")
-    def healthz() -> dict[str, Any]:
-        return {
+    def healthz(request: Request) -> dict[str, Any]:
+        payload = {
             "status": "ok" if provider.health() else "degraded",
             "provider": provider.health(),
             "cloud_provider": cloud_provider.health() if cloud_provider is not None else None,
@@ -493,6 +493,13 @@ def create_app(
             "rag_enabled": settings.rag.enabled,
             "streams": sum(1 for e in state.sessions.values() if e.stream_stop.is_set()),
         }
+        ui_version = request.headers.get("x-nova-ui-version")
+        if ui_version and ui_version != __version__:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "version_mismatch", "ui_version": ui_version, "backend_version": __version__},
+            )
+        return payload
 
     @app.get("/v1/audit")
     def list_audit(limit: int = 50) -> dict[str, Any]:

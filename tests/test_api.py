@@ -92,6 +92,16 @@ class TestMeta:
             data = client.get("/healthz").json()
             assert data["status"] == "degraded"
 
+    def test_healthz_rejects_ui_version_mismatch(self, tmp_path) -> None:
+        with _client(tmp_path) as client:
+            response = client.get("/healthz", headers={"X-NOVA-UI-Version": "0.17.2"})
+            assert response.status_code == 409
+            assert response.json()["detail"] == {
+                "code": "version_mismatch",
+                "ui_version": "0.17.2",
+                "backend_version": "0.18.0",
+            }
+
     def test_serves_web_interface(self, tmp_path) -> None:
         with _client(tmp_path) as client:
             response = client.get("/")

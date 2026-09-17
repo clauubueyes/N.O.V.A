@@ -22,11 +22,16 @@ import urllib.request
 from pathlib import Path
 
 
-def _probe(base: str, timeout: float = 2.0) -> bool:
+def _probe(base: str, timeout: float = 2.0, expected_version: str | None = None) -> bool:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(base + "/healthz", timeout=timeout) as resp:
-            return resp.status == 200
+            if resp.status != 200:
+                return False
+            if expected_version is None:
+                return True
+            import json
+            return json.loads(resp.read()).get("version") == expected_version
     except Exception:
         return False
 
@@ -67,11 +72,17 @@ def _spawn_server(args) -> subprocess.Popen:
 
 def _do_start(args) -> int:
     import os
+    from nova import __version__
 
     base = "http://{}:{}".format(*_server_base(args))
-    if _probe(base, timeout=2.0) or (time.sleep(0.5) is None and _probe(base, timeout=2.0)):
+    if _probe(base, timeout=2.0, expected_version=__version__) or (
+        time.sleep(0.5) is None and _probe(base, timeout=2.0, expected_version=__version__)
+    ):
         print(f"ALREADY_RUNNING {base}")
         return 0
+    if _probe(base, timeout=2.0):
+        print(f"VERSION_MISMATCH {base}; reinicia N.O.V.A. para continuar")
+        return 1
     os.chdir(args.app_root)
     _spawn_server(args)
     deadline = time.time() + args.wait

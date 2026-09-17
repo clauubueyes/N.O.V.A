@@ -5,11 +5,13 @@ import os
 import socket
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
 import httpx
 
+from nova import __version__
 from nova.core.config import load_settings
 from nova.core.paths import installation_home
 from nova.desktop.configuration import initialize
@@ -45,7 +47,13 @@ def connection(home: Path | None = None) -> tuple[str, str] | None:
         with httpx.Client(timeout=1, trust_env=False) as client:
             reply = client.get(base + '/v1/desktop/status', headers={'Authorization': 'Bearer ' + token})
             if reply.status_code == 200 and reply.json().get('desktop'):
-                return base, token
+                    if reply.json().get('version') == __version__:
+                        return base, token
+                    client.post(base + '/v1/desktop/exit', headers={'Authorization': 'Bearer ' + token})
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline and (home / 'core-runtime.json').exists():
+                        time.sleep(0.1)
+                    return None
     except (OSError, ValueError, KeyError, httpx.HTTPError):
         pass
     return None

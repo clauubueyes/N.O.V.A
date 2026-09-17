@@ -5,13 +5,46 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 
+import httpx
+
 from nova.setup.state import StateStore, check_removal_path, repository_roots
 
 MARKER = '.nova-bundle.json'
+
+
+def stop_running_core(timeout: float = 15.0) -> None:
+    """Ask the desktop core to exit and wait before replacing its files."""
+    from nova.core.config import load_settings
+    from nova.core.paths import installation_home
+
+    home = installation_home()
+    marker = home / 'core-runtime.json'
+    if not marker.is_file():
+        return
+    try:
+        runtime = json.loads(marker.read_text(encoding='utf-8'))
+        port = int(runtime['port'])
+        token = load_settings(str(home / 'config.yaml')).api.token
+    except (OSError, ValueError, KeyError):
+        raise RuntimeError('No se puede verificar el núcleo activo; la actualización se ha detenido.')
+
+    try:
+        with httpx.Client(base_url=f'http://127.0.0.1:{port}', timeout=3, trust_env=False) as client:
+            response = client.post('/v1/desktop/exit', headers={'Authorization': 'Bearer ' + token})
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RuntimeError('No se puede cerrar correctamente el núcleo activo; la actualización se ha detenido.') from exc
+
+    deadline = time.monotonic() + timeout
+    while marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if marker.exists():
+        raise RuntimeError('El núcleo anterior no se cerró a tiempo; la actualización se ha detenido.')
 
 
 def sha256(path: Path) -> str:
@@ -36,6 +69,9 @@ def validate_target(target: Path) -> Path:
 def install_bundle(archive: Path, manifest: dict, target: Path, progress=lambda done, total: None) -> Path:
     """Verified staging plus rollback; application files and user data stay separate."""
     store = StateStore()
+    target = validate_target(target)
+    if target.exists():
+        stop_running_core()
     with store.lock():
         target = validate_target(target)
         if sha256(archive) != manifest['sha256']:

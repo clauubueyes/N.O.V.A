@@ -6,6 +6,7 @@ let apiBase = (params.get("api") || localStorage.getItem("nova.apiBase") || "").
 let token = params.get("token") || sessionStorage.getItem("nova.token") || "";
 if (params.get("token")) sessionStorage.setItem("nova.token", token);
 localStorage.removeItem("nova.token");
+const uiVersion = document.querySelector('meta[name="nova-version"]')?.content || "";
 let current = null, busy = false, pending = [], status = null, panelView = "", prepareTimer = null, approvalId = null, stick = true;
 const messagesEl = $("messages");
 function syncSend() {
@@ -22,7 +23,7 @@ function closeMobileSidebar() {
   const scrim = $("scrim"); if (scrim) scrim.hidden = true;
 }
 const isLocalPage = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-const headers = () => token ? {Authorization: "Bearer " + token} : {};
+const headers = () => Object.assign(token ? {Authorization: "Bearer " + token} : {}, uiVersion ? {"X-NOVA-UI-Version": uiVersion} : {});
 const coreProbeBases = ["http://localhost:8000", "http://127.0.0.1:8000"];
 async function probeLocalCore() {
   for (const base of coreProbeBases) {
@@ -154,6 +155,10 @@ async function loadModels() {
 }
 async function health() {
   status = await api("GET", "/v1/desktop/status");
+  if (uiVersion && status.version !== uiVersion) {
+    try { await fetch(apiBase + "/v1/desktop/exit", {method: "POST", headers: headers()}); } catch (e) {}
+    throw new Error("La aplicación se está actualizando. Reinicia N.O.V.A. para continuar.");
+  }
   $("privacy").replaceChildren(el("span", status.privacy === "cloud_allowed" ? "Servicios externos permitidos" : "Privado y local"));
   $("composer-note").textContent = status.privacy === "cloud_allowed" ? "Las funciones externas pueden recibir el contenido de la conversación. Los adjuntos se procesan localmente." : "Tus conversaciones se guardan en este ordenador.";
   const response = await api("GET", "/healthz");
