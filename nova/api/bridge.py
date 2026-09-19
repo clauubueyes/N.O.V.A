@@ -70,6 +70,16 @@ def _spawn_server(args) -> subprocess.Popen:
     )
 
 
+def _stop_conflicting_core() -> bool:
+    from nova.setup.bundle import stop_running_core
+
+    try:
+        stop_running_core(timeout=15.0)
+        return True
+    except Exception:
+        return False
+
+
 def _do_start(args) -> int:
     import os
     from nova import __version__
@@ -81,13 +91,23 @@ def _do_start(args) -> int:
         print(f"ALREADY_RUNNING {base}")
         return 0
     if _probe(base, timeout=2.0):
-        print(f"VERSION_MISMATCH {base}; reinicia N.O.V.A. para continuar")
-        return 1
+        print(f"VERSION_MISMATCH {base}; deteniendo el núcleo anterior")
+        if not _stop_conflicting_core():
+            print(f"COULD_NOT_STOP {base}")
+            return 1
+        deadline = time.time() + 20
+        while time.time() < deadline and _probe(base, timeout=1.0):
+            time.sleep(0.5)
+        if _probe(base, timeout=1.0):
+            print(f"COULD_NOT_STOP {base}")
+            return 1
     os.chdir(args.app_root)
     _spawn_server(args)
     deadline = time.time() + args.wait
     while time.time() < deadline:
-        if _probe(base, timeout=1.0):
+        # Only a backend that reports our exact version counts as ready: the UI
+        # aborts every connection whose version does not match.
+        if _probe(base, timeout=1.0, expected_version=__version__):
             print(f"STARTED {base}")
             return 0
         time.sleep(0.5)

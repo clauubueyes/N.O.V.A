@@ -2,7 +2,7 @@
 
 **N.O.V.A. = Neural Operations & Virtual Assistant**
 
-![Versión](https://img.shields.io/badge/versi%C3%B3n-0.17.1-1e88e5)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-0.18.1-1e88e5)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-4caf50)
 
 Tu asistente personal de IA. **Privado. Local. Tuyo.**

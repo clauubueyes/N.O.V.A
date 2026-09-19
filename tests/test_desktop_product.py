@@ -7,6 +7,7 @@ import threading
 import time
 import zipfile
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 import yaml
@@ -406,3 +407,224 @@ def test_connection_closes_incompatible_core(environment, tmp_path, monkeypatch)
     monkeypatch.setattr(runtime.httpx, 'Client', Client)
 
     assert runtime.connection(home) is None
+    assert not marker.exists()
+
+
+def test_connection_returns_matching_core(environment, tmp_path, monkeypatch):
+    import nova.desktop.runtime as runtime
+    from nova import __version__
+
+    home = tmp_path / 'home'
+    home.mkdir(exist_ok=True)
+    (home / 'config.yaml').write_text('api:\n  token: secret\n', encoding='utf-8')
+    marker = home / 'core-runtime.json'
+    marker.write_text(json.dumps({'port': 8123, 'pid': 999}), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'installation_home', lambda: home)
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, *args, **kwargs):
+            return type('Response', (), {'status_code': 200, 'json': lambda self: {'desktop': True, 'version': __version__}})()
+
+    monkeypatch.setattr(runtime.httpx, 'Client', Client)
+
+    assert runtime.connection(home) == ('http://127.0.0.1:8123', 'secret')
+
+
+def test_connection_drops_stale_marker(environment, tmp_path, monkeypatch):
+    import httpx
+    import nova.desktop.runtime as runtime
+
+    home = tmp_path / 'home'
+    home.mkdir(exist_ok=True)
+    (home / 'config.yaml').write_text('api:\n  token: secret\n', encoding='utf-8')
+    marker = home / 'core-runtime.json'
+    marker.write_text(json.dumps({'port': 8123, 'pid': 999}), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'installation_home', lambda: home)
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, *args, **kwargs):
+            raise httpx.ConnectError('no listener', request=None)
+
+    monkeypatch.setattr(runtime.httpx, 'Client', Client)
+
+    assert runtime.connection(home) is None
+    assert not marker.exists()
+
+
+def test_connection_force_kills_unresponsive_core(environment, tmp_path, monkeypatch):
+    import nova.setup.bundle as bundle
+    import nova.desktop.runtime as runtime
+
+    home = tmp_path / 'home'
+    home.mkdir(exist_ok=True)
+    (home / 'config.yaml').write_text('api:\n  token: secret\n', encoding='utf-8')
+    marker = home / 'core-runtime.json'
+    marker.write_text(json.dumps({'port': 8123, 'pid': 31337}), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'installation_home', lambda: home)
+
+    killed = []
+    monkeypatch.setattr(bundle, '_terminate_process', lambda pid: killed.append(pid))
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, *args, **kwargs):
+            return type('Response', (), {'status_code': 200, 'json': lambda self: {'desktop': True, 'version': '0.17.2'}})()
+
+        def post(self, *args, **kwargs):
+            pass  # the old core never removes its marker
+
+    monkeypatch.setattr(runtime.httpx, 'Client', Client)
+    tick = {'v': 0.0}
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: (tick.update(v=tick['v'] + 10.0)) or tick['v'])
+    monkeypatch.setattr(runtime.time, 'sleep', lambda s: None)
+
+    def never_connects(address, timeout=None):
+        raise OSError('no listener')
+
+    monkeypatch.setattr(runtime.socket, 'create_connection', never_connects)
+
+    assert runtime.connection(home) is None
+    assert killed == [31337]
+    assert not marker.exists()
+
+
+def test_exit_route_requires_token_and_stops(environment):
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+
+    import nova.desktop.runtime as runtime
+
+    settings = environment[0]
+    app = create_app(settings, provider=FakeProvider(), config_path=environment[1])
+    server = SimpleNamespace(should_exit=False)
+    runtime.register_shutdown(app, server, settings)
+    with TestClient(app) as client:
+        plain = client.post('/v1/desktop/exit', headers={'Authorization': ''})
+        assert plain.status_code == 401
+        wrong = client.post('/v1/desktop/exit', headers={'Authorization': 'Bearer wrong-key'})
+        assert wrong.status_code == 401
+        ok = client.post('/v1/desktop/exit', headers={'Authorization': 'Bearer test-only-secret'})
+        assert ok.status_code == 200
+        assert ok.json() == {'stopping': True}
+        assert server.should_exit is True
+
+
+def test_bundle_stop_nothing_running(environment, monkeypatch):
+    import nova.setup.bundle as bundle
+
+    calls = []
+    monkeypatch.setattr(bundle, '_listening', lambda port, host='127.0.0.1': False)
+    monkeypatch.setattr(bundle, '_request_exit', lambda port, token: calls.append(('exit', port, token)))
+    monkeypatch.setattr(bundle, '_discover_api_server_pids', lambda: set())
+    monkeypatch.setattr(bundle, '_terminate_process', lambda pid: calls.append(('kill', pid)))
+
+    bundle.stop_running_core(timeout=0.2)
+
+    assert calls == []
+
+
+def test_bundle_stops_api_server_core_gracefully(environment, monkeypatch):
+    import nova.setup.bundle as bundle
+
+    counts = {}
+    monkeypatch.setattr(bundle, '_listening', lambda port, host='127.0.0.1': counts.update({port: counts.get(port, 0) + 1}) or counts[port] == 1)
+    exited = []
+    monkeypatch.setattr(bundle, '_request_exit', lambda port, token: exited.append((port, token)))
+    monkeypatch.setattr(bundle, '_discover_api_server_pids', lambda: set())
+    monkeypatch.setattr(bundle, '_terminate_process', lambda pid: exited.append(('kill', pid)))
+
+    bundle.stop_running_core(timeout=0.2)
+
+    assert exited == [(8000, 'test-only-secret')]
+
+
+def test_bundle_force_kills_obsolete_api_server(environment, monkeypatch):
+    import nova.setup.bundle as bundle
+
+    monkeypatch.setattr(bundle, '_listening', lambda port, host='127.0.0.1': True)
+    monkeypatch.setattr(bundle, '_request_exit', lambda port, token: None)
+    monkeypatch.setattr(bundle, '_discover_api_server_pids', lambda: {4242})
+    killed = []
+    monkeypatch.setattr(bundle, '_terminate_process', lambda pid: killed.append(pid))
+
+    with pytest.raises(RuntimeError):
+        bundle.stop_running_core(timeout=0.2)
+
+    assert 4242 in killed
+
+
+def test_bundle_stops_marker_core_gracefully(environment, monkeypatch):
+    import nova.setup.bundle as bundle
+
+    home = Path(environment[1]).parent
+    marker = home / 'core-runtime.json'
+    marker.write_text(json.dumps({'port': 8123, 'pid': 31337}), encoding='utf-8')
+    counts = {'8123': 0}
+
+    def fake_listening(port, host='127.0.0.1'):
+        if port != 8123:
+            return False
+        counts['8123'] += 1
+        return counts['8123'] == 1
+
+    exited = []
+    monkeypatch.setattr(bundle, '_listening', fake_listening)
+    monkeypatch.setattr(bundle, '_request_exit', lambda port, token: exited.append((port, token)))
+    monkeypatch.setattr(bundle, '_discover_api_server_pids', lambda: set())
+    monkeypatch.setattr(bundle, '_terminate_process', lambda pid: exited.append(('kill', pid)))
+
+    bundle.stop_running_core(timeout=0.2)
+
+    assert exited == [(8123, 'test-only-secret')]
+    assert not marker.exists()
+
+
+def test_bundle_aborts_install_when_core_cannot_be_stopped(environment, tmp_path, monkeypatch):
+    import nova.setup.bundle as bundle
+    from nova.setup.state import StateStore
+
+    archive = tmp_path / 'package.zip'
+    with zipfile.ZipFile(archive, 'w') as package:
+        package.writestr('NOVA.exe', b'new executable')
+    target = tmp_path / 'install'
+    target.mkdir()
+    (target / 'NOVA.exe').write_bytes(b'old executable')
+    (target / bundle.MARKER).write_text(json.dumps({'product': 'NOVA', 'version': 'old'}), encoding='utf-8')
+    StateStore().record_resource(target, 'binary')
+
+    def boom():
+        raise RuntimeError('El núcleo anterior no se cerró a tiempo; la actualización se ha detenido.')
+
+    monkeypatch.setattr(bundle, 'stop_running_core', boom)
+
+    with pytest.raises(RuntimeError):
+        install_bundle(archive, {'sha256': sha256(archive), 'version': 'new'}, target)
+
+    assert (target / 'NOVA.exe').read_bytes() == b'old executable'
+    assert (target / bundle.MARKER).is_file()

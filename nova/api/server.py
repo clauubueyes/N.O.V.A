@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import sys
 
 import uvicorn
@@ -7,6 +8,7 @@ import uvicorn
 from nova.api.app import create_app
 from nova.core.config import load_settings
 from nova.core.logging import get_logger, setup_logging
+from nova.desktop.runtime import register_shutdown
 
 logger = get_logger("api.server")
 
@@ -39,8 +41,17 @@ def main() -> int:
         logger.info("ollama check: %s (started_now=%s)", st.message, st.started_now)
     _require_safe_bind(settings)
     app = create_app(settings)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((settings.api.host, settings.api.port))
+    listener.listen(128)
+    server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False))
+    register_shutdown(app, server, settings)
     logger.info("listening on http://%s:%d", settings.api.host, settings.api.port)
-    uvicorn.run(app, host=settings.api.host, port=settings.api.port, log_level="info")
+    try:
+        server.run(sockets=[listener])
+    finally:
+        listener.close()
     return 0
 
 

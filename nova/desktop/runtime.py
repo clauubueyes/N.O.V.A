@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 
+import fastapi
 import httpx
 
 from nova import __version__
@@ -35,10 +36,48 @@ def spawn(*args: str) -> subprocess.Popen:
                             env=env, close_fds=True)
 
 
+def register_shutdown(app, server, settings) -> None:
+    """Add a graceful `/v1/desktop/exit` route the launcher, the web bridge and
+    the updater can POST to before replacing the installation files.
+
+    The route is inserted before every other route (same contract as the old
+    desktop core) but now also honours a configured `api.token`, so a server
+    bound to a non-loopback interface can never be stopped anonymously.
+    """
+    from fastapi.routing import APIRoute
+
+    token = settings.api.token or ""
+
+    async def shutdown(request: fastapi.Request):
+        if token:
+            auth = request.headers.get("authorization") or ""
+            if auth != "Bearer " + token:
+                raise fastapi.HTTPException(status_code=401, detail="invalid token")
+        app.state.nova.paused = True
+        broker = app.state.nova.approvals
+        if broker is not None:
+            broker.cancel_all()
+        server.should_exit = True
+        return {"stopping": True}
+
+    app.router.routes.insert(0, APIRoute("/v1/desktop/exit", shutdown, methods=["POST"]))
+
+
 def connection(home: Path | None = None) -> tuple[str, str] | None:
     home = home or installation_home()
+    marker = home / 'core-runtime.json'
+
+    def drop_stale_marker(port: int) -> None:
+        # A marker whose process is unreachable would block the launcher forever
+        # (start_core only spawns when no marker exists), so clear it.
+        try:
+            with socket.create_connection(('127.0.0.1', port), timeout=0.5):
+                return
+        except OSError:
+            marker.unlink(missing_ok=True)
+
     try:
-        info = json.loads((home / 'core-runtime.json').read_text(encoding='utf-8'))
+        info = json.loads(marker.read_text(encoding='utf-8'))
         port = int(info['port'])
         if not 1 <= port <= 65535:
             return None
@@ -51,17 +90,29 @@ def connection(home: Path | None = None) -> tuple[str, str] | None:
                         return base, token
                     client.post(base + '/v1/desktop/exit', headers={'Authorization': 'Bearer ' + token})
                     deadline = time.monotonic() + 15
-                    while time.monotonic() < deadline and (home / 'core-runtime.json').exists():
+                    while time.monotonic() < deadline and marker.exists():
                         time.sleep(0.1)
+                    if marker.exists():
+                        # The old core ignored the exit request: force-kill it so
+                        # the fresh version can start, then clear the marker.
+                        try:
+                            pid = int(info.get('pid') or 0)
+                        except (TypeError, ValueError):
+                            pid = 0
+                        if pid > 0:
+                            from nova.setup.bundle import _terminate_process
+                            _terminate_process(pid)
+                        drop_stale_marker(port)
                     return None
-    except (OSError, ValueError, KeyError, httpx.HTTPError):
+    except httpx.HTTPError:
+        drop_stale_marker(port)
+    except (OSError, ValueError, KeyError):
         pass
     return None
 
 
 def serve() -> int:
     import uvicorn
-    from fastapi import HTTPException
     from nova.api.app import create_app
     from nova.core.logging import setup_logging
     from nova.setup.state import StateStore
@@ -73,13 +124,7 @@ def serve() -> int:
         setup_logging(settings.logging)
         app = create_app(settings, desktop=True, config_path=config)
         server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False))
-
-        async def shutdown():
-            app.state.nova.paused = True
-            app.state.nova.approvals.cancel_all()
-            server.should_exit = True
-            return {'stopping': True}
-        app.router.routes.insert(0, __import__('fastapi').routing.APIRoute('/v1/desktop/exit', shutdown, methods=['POST']))
+        register_shutdown(app, server, settings)
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(('127.0.0.1', 0))
         listener.listen(128)

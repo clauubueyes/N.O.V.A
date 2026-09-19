@@ -25,14 +25,26 @@ function closeMobileSidebar() {
 const isLocalPage = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const headers = () => Object.assign(token ? {Authorization: "Bearer " + token} : {}, uiVersion ? {"X-NOVA-UI-Version": uiVersion} : {});
 const coreProbeBases = ["http://localhost:8000", "http://127.0.0.1:8000"];
-async function probeLocalCore() {
+let selfHealing = false;
+async function probeLocally() {
   for (const base of coreProbeBases) {
     try {
       const response = await fetch(base + "/healthz", {headers: headers()});
-      if (response.ok) return base;
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data && (!uiVersion || data.version === uiVersion)) return {base, mismatch: false};
+      return {base: null, mismatch: true};
     } catch (e) {}
   }
-  return null;
+  return {base: null, mismatch: false};
+}
+async function probeLocalCore() { return (await probeLocally()).base; }
+
+function recoverFromVersionMismatch() {
+  if (selfHealing) return;
+  selfHealing = true;
+  showConnection();
+  startCoreTap();
 }
 
 async function api(method, path, body) {
@@ -157,7 +169,9 @@ async function health() {
   status = await api("GET", "/v1/desktop/status");
   if (uiVersion && status.version !== uiVersion) {
     try { await fetch(apiBase + "/v1/desktop/exit", {method: "POST", headers: headers()}); } catch (e) {}
-    throw new Error("La aplicación se está actualizando. Reinicia N.O.V.A. para continuar.");
+    const error = new Error("La aplicación se está actualizando. Reinicia N.O.V.A. para continuar.");
+    error.isVersionMismatch = true;
+    throw error;
   }
   $("privacy").replaceChildren(el("span", status.privacy === "cloud_allowed" ? "Servicios externos permitidos" : "Privado y local"));
   $("composer-note").textContent = status.privacy === "cloud_allowed" ? "Las funciones externas pueden recibir el contenido de la conversación. Los adjuntos se procesan localmente." : "Tus conversaciones se guardan en este ordenador.";
@@ -408,12 +422,14 @@ function startCoreTap() {
     const base = await probeLocalCore();
     if (base) {
       clearInterval(corePollTimer);
+      selfHealing = false;
       apiBase = base; localStorage.setItem("nova.apiBase", apiBase);
       statusLine.textContent = "Conectado."; try { $("panel").close(); await afterConnect(); } catch (e) { fail(e); }
       return;
     }
     if (Date.now() > deadline) {
       clearInterval(corePollTimer);
+      selfHealing = false;
       statusLine.textContent = "No ha sido posible encenderlo. Si no ocurre nada, ejecuta «nova-setup protocol --enable 1» en tu ordenador y vuelve a intentarlo.";
     }
   }, 1500);

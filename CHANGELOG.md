@@ -10,6 +10,20 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y sigu
 - La UI, el launcher y el backend verifican su versión y bloquean la conexión ante cualquier mismatch.
 - Añadidas pruebas para impedir que una UI nueva continúe atendida por un backend antiguo.
 
+### Corregido — Ningún backend antiguo sobrevive a una actualización
+
+- El `nova://` bridge detiene el núcleo obsoleto (versión distinta) y arranca el nuevo en su lugar, en
+  lugar de quedarse bloqueado pidiendo reiniciar la aplicación.
+- El instalador ya no da por finalizado el cierre solo mirando `core-runtime.json`: también cierra el
+  servidor del puerto API lanzado por el flujo web (incluidos procesos 0.17.x sin ruta de salida, vía
+  terminación por PID) antes de sustituir los archivos.
+- El API server (`nova.api.server`) soporta `POST /v1/desktop/exit` con apagado elegante, para que el
+  updater y el bridge puedan cerrarlo como al core de escritorio.
+- La UI web no considera válido un backend solo porque responda HTTP: exige que `healthz` reporte la
+  misma versión que la interfaz antes de conectarse.
+- El launcher descarta markers obsoletos (núcleo muerto) para no quedar bloqueado al arrancar.
+- La web repara sola un mismatch local: detiene el backend obsoleto vía `nova://start` y se reconecta.
+
 ## [0.18.0] - 2026-09-16
 
 ### Añadido — Orquestación Hybrid AI local-first
